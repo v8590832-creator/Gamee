@@ -229,14 +229,6 @@ export function buildLevelScene(
     })
   );
 
-  const matHazardCurb = track(
-    new THREE.MeshStandardMaterial({
-      map: textures.hazardStripeAlbedo,
-      roughness: 0.7,
-      metalness: 0.25,
-    })
-  );
-
   const matRollerYellow = track(
     new THREE.MeshStandardMaterial({
       color: '#e8a220',

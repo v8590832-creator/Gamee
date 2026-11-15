@@ -1,13 +1,7 @@
 import type {
-  BossEncounterDef,
-  CheckpointDef,
   CollectibleDef,
   LevelDefinition,
-  PlatformDef,
-  PortalPairDef,
-  SwitchDef,
   TrafficLaneDef,
-  WorldId,
 } from '../types';
 
 function makeCoinsRow(prefix: string, x: number, y: number, zStart: number, zStep: number, count: number): CollectibleDef[] {

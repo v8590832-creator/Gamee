@@ -48,8 +48,8 @@ export function TitleScreen({
           <span aria-hidden="true" className="absolute -bottom-3.5 -right-3.5 w-3 h-3 border-b-2 border-r-2 border-[#58c477]/45" />
 
           {/* Title Emblem & Highway Signpost Header */}
-          <div className="flex items-center gap-4 mb-4">
-            <svg viewBox="0 0 64 64" className="w-14 h-14 shrink-0" aria-hidden="true">
+          <div className="flex items-center gap-3 sm:gap-4 mb-4">
+            <svg viewBox="0 0 64 64" className="w-12 h-12 sm:w-14 sm:h-14 shrink-0" aria-hidden="true">
               <circle cx="32" cy="32" r="28" fill="#12161d" stroke="#e59a3c" strokeWidth="2.4" />
               <path d="M12 48 L26 16 M52 48 L38 16" stroke="#8a96a6" strokeWidth="3" strokeLinecap="round" />
               <line x1="32" y1="20" x2="32" y2="47" stroke="#f5b832" strokeWidth="2.5" strokeDasharray="4 4" />
@@ -62,17 +62,17 @@ export function TitleScreen({
               />
               <circle cx="32" cy="27" r="6" fill="#e59a3c" />
             </svg>
-            <div>
-              <div className="text-[10px] font-mono-num tracking-[0.2em] text-[#58c477] uppercase mb-1 whitespace-nowrap">
+            <div className="min-w-0 flex-1">
+              <div className="text-[10px] font-mono-num tracking-[0.12em] sm:tracking-[0.2em] text-[#58c477] uppercase mb-1">
                 10 WORLDS · 50 STAGES · {saveData.coins} COINS · ★ {totalStars}/150
               </div>
-              <h1 className="font-display text-4xl md:text-5xl font-bold tracking-wider text-[#f3f5f8] leading-none">
+              <h1 className="font-display text-3xl sm:text-4xl md:text-5xl font-bold tracking-wider text-[#f3f5f8] leading-none">
                 BOUNCEBACK
               </h1>
-              <div className="font-display text-sm md:text-base font-semibold tracking-[0.18em] text-[#f5b832] mt-1">
+              <div className="font-display text-xs sm:text-sm md:text-base font-semibold tracking-[0.12em] sm:tracking-[0.18em] text-[#f5b832] mt-1">
                 THE GREAT ROAD ADVENTURE
               </div>
-              <p className="mt-1 text-[11px] tracking-[0.18em] text-[#cfd6e0] font-medium">
+              <p className="mt-1 text-[10px] sm:text-[11px] tracking-[0.1em] sm:tracking-[0.18em] text-[#cfd6e0] font-medium">
                 ONE MAN. COUNTLESS ROADS. UNLIMITED BOUNCES.
               </p>
             </div>
@@ -188,9 +188,12 @@ export function TitleScreen({
       </div>
 
       {/* Bottom Controls Strip + Respectful Arcade Notice */}
-      <div className="relative z-10 px-6 md:px-14 pb-4 flex flex-wrap items-center justify-between gap-3 text-[11px] text-[#9aa5b5] hud-text-shadow">
-        <p className="truncate">
+      <div className="relative z-10 px-6 md:px-14 pb-4 flex flex-wrap items-center justify-between gap-2 sm:gap-3 text-[10px] sm:text-[11px] text-[#9aa5b5] hud-text-shadow">
+        <p className="hidden sm:block truncate">
           WASD Move · Space Jump / Double Jump · Shift Sprint · Ctrl Slide · Q Super Bounce · V Road Dash · F Highway Surge · E Interact · Mouse Orbit
+        </p>
+        <p className="sm:hidden">
+          On-screen Touch Controls on Mobile · Keyboard &amp; Mouse on Desktop
         </p>
         <p className="text-[#7c8798] shrink-0">Fictional arcade parody adventure · No official affiliation</p>
       </div>
