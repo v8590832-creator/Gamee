@@ -47,6 +47,8 @@ export function createDefaultSaveData(): SaveData {
 
 export class SaveManager {
   private data: SaveData;
+  public storageAvailable = true;
+  public lastError: string | null = null;
 
   constructor() {
     this.data = this.load();
@@ -59,6 +61,7 @@ export class SaveManager {
   public load(): SaveData {
     try {
       if (typeof window === 'undefined' || !window.localStorage) {
+        this.storageAvailable = false;
         return createDefaultSaveData();
       }
       const raw = window.localStorage.getItem(SAVE_KEY) || window.localStorage.getItem(BACKUP_KEY);
@@ -91,6 +94,7 @@ export class SaveManager {
         levelProgress: parsed.levelProgress ?? {},
       };
     } catch {
+      this.lastError = 'Saved data could not be read; starting with a fresh local profile.';
       return createDefaultSaveData();
     }
   }
@@ -101,9 +105,13 @@ export class SaveManager {
         const serialized = JSON.stringify(this.data);
         window.localStorage.setItem(SAVE_KEY, serialized);
         window.localStorage.setItem(BACKUP_KEY, serialized);
+        this.storageAvailable = true;
+        this.lastError = null;
       }
     } catch {
-      // Ignore storage quota issues
+      this.storageAvailable = false;
+      this.lastError =
+        'Browser storage is unavailable or full. Progress will stay active for this session only.';
     }
   }
 

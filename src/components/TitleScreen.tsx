@@ -174,7 +174,7 @@ export function TitleScreen({
 
           {quitNotice && (
             <div className="mt-3 p-3 hud-panel rounded text-xs text-[#cfd6e0] flex items-center justify-between gap-3">
-              <span>Road progress saved locally. You may safely close this window.</span>
+              <span>Progress saved in this browser&apos;s local storage. You may safely close this tab.</span>
               <button
                 type="button"
                 onClick={onDismissQuitNotice}

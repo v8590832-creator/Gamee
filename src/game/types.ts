@@ -290,6 +290,7 @@ export interface GameSettings {
   cameraDistance: number;
   cameraSmoothing: number;
   invertY: boolean;
+  touchControlsMode: 'auto' | 'on' | 'off';
   bindings: ControlBindings;
 }
 

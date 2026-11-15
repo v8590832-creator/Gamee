@@ -25,7 +25,7 @@ import { CheckpointManager } from '../systems/CheckpointManager';
 import { CollectibleManager } from '../systems/CollectibleManager';
 import { GravityController } from '../systems/GravityController';
 import { PhysicsManager } from '../systems/PhysicsManager';
-import { PlayerController } from '../systems/PlayerController';
+import { PlayerController, type TouchInputState } from '../systems/PlayerController';
 import { PortalSystem } from '../systems/PortalSystem';
 import { SaveManager } from '../systems/SaveManager';
 import { CharacterAnimationController } from './CharacterAnimationController';
@@ -44,6 +44,27 @@ export interface EngineCallbacks {
   onHudUpdate: (hud: HudSnapshot) => void;
   onStateChange: (state: GameState) => void;
   onLevelComplete: (summary: RunSummary) => void;
+  onContextStatusChange?: (lost: boolean) => void;
+}
+
+export function detectWebGLSupport(): { supported: boolean; reason?: string } {
+  try {
+    if (typeof window === 'undefined' || !window.WebGLRenderingContext) {
+      return { supported: false, reason: 'WebGL is not supported by this browser.' };
+    }
+    const probe = document.createElement('canvas');
+    const gl = probe.getContext('webgl2') || probe.getContext('webgl');
+    if (!gl) {
+      return {
+        supported: false,
+        reason: 'Hardware or software WebGL acceleration is disabled in your browser settings.',
+      };
+    }
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    return { supported: true };
+  } catch {
+    return { supported: false, reason: 'Unable to initialize WebGL graphics context.' };
+  }
 }
 
 function detectSoftwareGl(): boolean {
@@ -104,6 +125,8 @@ export class GameEngine {
   private gameState: GameState = 'title';
   private frameId = 0;
   private disposed = false;
+  private contextLost = false;
+  private envRenderTarget: THREE.WebGLRenderTarget | null = null;
   private lastTimestamp = 0;
   private realTime = 0;
   private worldTime = 0;
@@ -143,6 +166,17 @@ export class GameEngine {
   private nearbySwitchId: string | null = null;
 
   private keysPressed = new Set<string>();
+  private touchInput: TouchInputState = {
+    moveForward: 0,
+    moveRight: 0,
+    jump: false,
+    sprint: false,
+    slide: false,
+    bounce: false,
+    dash: false,
+    special: false,
+    interact: false,
+  };
   private pointerDown = false;
   private prevPauseKey = false;
   private prevRestartKey = false;
@@ -224,10 +258,13 @@ export class GameEngine {
     this.scene.add(this.skyDome);
 
     const pmrem = new THREE.PMREMGenerator(this.renderer);
-    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    const roomEnv = new RoomEnvironment();
+    this.envRenderTarget = pmrem.fromScene(roomEnv, 0.04);
+    this.scene.environment = this.envRenderTarget.texture;
+    roomEnv.dispose();
     pmrem.dispose();
 
-    this.camera = new THREE.PerspectiveCamera(62, w / h, 0.1, 420);
+    this.camera = new THREE.PerspectiveCamera(62, Math.max(1, w) / Math.max(1, h), 0.1, 420);
 
     this.hemiLight = new THREE.HemisphereLight('#90c2eb', '#5c4b3b', 1.15);
     this.scene.add(this.hemiLight);
@@ -288,7 +325,30 @@ export class GameEngine {
 
   public setLoadout(loadout: CharacterLoadout): void {
     this.character.applyLoadout(loadout);
-    this.renderer.render(this.scene, this.camera);
+    if (!this.contextLost) {
+      this.renderer.render(this.scene, this.camera);
+    }
+  }
+
+  public setTouchMove(moveForward: number, moveRight: number): void {
+    this.touchInput.moveForward = Math.max(-1, Math.min(1, moveForward));
+    this.touchInput.moveRight = Math.max(-1, Math.min(1, moveRight));
+  }
+
+  public setTouchAction(
+    action: 'jump' | 'sprint' | 'slide' | 'bounce' | 'dash' | 'special' | 'interact',
+    pressed: boolean
+  ): void {
+    if (pressed) this.audioManager.unlock();
+    this.touchInput[action] = pressed;
+  }
+
+  public orbitCamera(deltaX: number, deltaY: number): void {
+    if (this.gameState !== 'playing') return;
+    const sens = 0.004 * this.settings.cameraSensitivity;
+    const ySign = this.settings.invertY ? -1 : 1;
+    this.camYaw -= deltaX * sens;
+    this.camPitch = Math.max(-0.25, Math.min(1.1, this.camPitch + deltaY * sens * ySign));
   }
 
   private applyQualitySettings(settings: GameSettings): void {
@@ -467,6 +527,7 @@ export class GameEngine {
     window.addEventListener('mousemove', this.onMouseMove);
     canvas.addEventListener('wheel', this.onWheel, { passive: true });
     canvas.addEventListener('webglcontextlost', this.onContextLost);
+    canvas.addEventListener('webglcontextrestored', this.onContextRestored);
   }
 
   private unbindEvents(): void {
@@ -482,15 +543,31 @@ export class GameEngine {
     window.removeEventListener('mousemove', this.onMouseMove);
     canvas.removeEventListener('wheel', this.onWheel);
     canvas.removeEventListener('webglcontextlost', this.onContextLost);
+    canvas.removeEventListener('webglcontextrestored', this.onContextRestored);
   }
 
   private onContextLost = (e: Event): void => {
     e.preventDefault();
+    this.contextLost = true;
+    this.keysPressed.clear();
+    this.pointerDown = false;
+    this.audioManager.silenceLoops();
+    this.callbacks.onContextStatusChange?.(true);
+  };
+
+  private onContextRestored = (): void => {
+    this.contextLost = false;
+    this.lastTimestamp = performance.now();
+    this.applyQualitySettings(this.settings);
+    this.onResize();
+    this.callbacks.onContextStatusChange?.(false);
+    this.renderer.render(this.scene, this.camera);
+    this.scheduleNext();
   };
 
   private onResize = (): void => {
-    const w = this.container.clientWidth || window.innerWidth;
-    const h = this.container.clientHeight || window.innerHeight;
+    const w = Math.max(1, this.container.clientWidth || window.innerWidth);
+    const h = Math.max(1, this.container.clientHeight || window.innerHeight);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
@@ -604,7 +681,7 @@ export class GameEngine {
   }
 
   private tick = (): void => {
-    if (this.disposed) return;
+    if (this.disposed || this.contextLost) return;
     const now = performance.now();
     const rawDt = Math.max(0.001, (now - this.lastTimestamp) / 1000);
     this.lastTimestamp = now;
@@ -654,7 +731,11 @@ export class GameEngine {
 
   private updatePlaying(dt: number): void {
     const level = this.currentLevel;
-    const input = this.playerController.sampleInput(this.keysPressed, this.settings.bindings);
+    const input = this.playerController.sampleInput(
+      this.keysPressed,
+      this.settings.bindings,
+      this.touchInput
+    );
 
     if (this.hitstopTimer > 0) {
       this.hitstopTimer = Math.max(0, this.hitstopTimer - dt);
@@ -1356,6 +1437,7 @@ export class GameEngine {
     this.builtLevel?.dispose();
     this.skyDome.geometry.dispose();
     (this.skyDome.material as THREE.Material).dispose();
+    this.envRenderTarget?.dispose();
     this.character.dispose();
     this.particles.dispose();
     this.textures.dispose();

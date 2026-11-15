@@ -117,11 +117,13 @@ export class ParticlePool {
   }
 
   public update(dt: number): void {
+    let matrixDirty = false;
     let colorDirty = false;
     for (let i = 0; i < MAX_PARTICLES; i++) {
       const s = this.slots[i];
       if (!s.active) continue;
 
+      matrixDirty = true;
       s.age += dt;
       if (s.age >= s.life) {
         s.active = false;
@@ -148,7 +150,9 @@ export class ParticlePool {
       colorDirty = true;
     }
 
-    this.mesh.instanceMatrix.needsUpdate = true;
+    if (matrixDirty) {
+      this.mesh.instanceMatrix.needsUpdate = true;
+    }
     if (colorDirty && this.mesh.instanceColor) {
       this.mesh.instanceColor.needsUpdate = true;
     }

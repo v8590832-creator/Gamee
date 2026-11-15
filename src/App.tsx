@@ -3,6 +3,7 @@ import { ChallengesModal } from './components/ChallengesModal';
 import { CreditsModal } from './components/CreditsModal';
 import { CustomizationModal } from './components/CustomizationModal';
 import { GameHud } from './components/GameHud';
+import { MobileControls } from './components/MobileControls';
 import { PauseModal, VictoryModal } from './components/PauseVictoryModals';
 import { ProfileModal } from './components/ProfileModal';
 import { SettingsModal } from './components/SettingsModal';
@@ -10,7 +11,7 @@ import { TitleScreen } from './components/TitleScreen';
 import { WorldSelectModal } from './components/WorldSelectModal';
 import { getLevelById } from './game/data/levels';
 import { WORLD_THEMES } from './game/data/worlds';
-import { GameEngine } from './game/render/GameEngine';
+import { detectWebGLSupport, GameEngine } from './game/render/GameEngine';
 import { AudioManager } from './game/systems/AudioManager';
 import { SaveManager } from './game/systems/SaveManager';
 import { SettingsManager } from './game/systems/SettingsManager';
@@ -71,6 +72,15 @@ function createInitialHud(levelId: string, totalCoins: number): HudSnapshot {
   };
 }
 
+function detectTouchCapable(): boolean {
+  if (typeof window === 'undefined') return false;
+  return (
+    window.matchMedia?.('(pointer: coarse)').matches ||
+    'ontouchstart' in window ||
+    navigator.maxTouchPoints > 0
+  );
+}
+
 export default function App() {
   const canvasMountRef = useRef<HTMLDivElement | null>(null);
   const engineRef = useRef<GameEngine | null>(null);
@@ -102,10 +112,20 @@ export default function App() {
   const [selectedWorld, setSelectedWorld] = useState<WorldId>(1);
   const [muted, setMuted] = useState(false);
   const [quitNotice, setQuitNotice] = useState(false);
+  const [webglError, setWebglError] = useState<string | null>(null);
+  const [contextLost, setContextLost] = useState(false);
+  const [storageWarning, setStorageWarning] = useState<string | null>(
+    () => saveMgrRef.current?.lastError ?? null
+  );
+  const [isTouchDevice, setIsTouchDevice] = useState<boolean>(() => detectTouchCapable());
 
   const syncSaveSnapshot = useCallback(() => {
     if (saveMgrRef.current) {
-      setSaveData({ ...saveMgrRef.current.getData(), loadout: { ...saveMgrRef.current.getData().loadout } });
+      setSaveData({
+        ...saveMgrRef.current.getData(),
+        loadout: { ...saveMgrRef.current.getData().loadout },
+      });
+      setStorageWarning(saveMgrRef.current.lastError);
     }
   }, []);
 
@@ -120,7 +140,19 @@ export default function App() {
       setRunSummary(summary);
       syncSaveSnapshot();
     },
+    onContextStatusChange: (lost: boolean) => {
+      setContextLost(lost);
+    },
   });
+
+  useEffect(() => {
+    const onFirstTouch = () => {
+      setIsTouchDevice(true);
+      audioMgrRef.current?.unlock();
+    };
+    window.addEventListener('touchstart', onFirstTouch, { passive: true, once: true });
+    return () => window.removeEventListener('touchstart', onFirstTouch);
+  }, []);
 
   useEffect(() => {
     const mountEl = canvasMountRef.current;
@@ -128,18 +160,36 @@ export default function App() {
       return;
     }
 
-    const engine = new GameEngine(
-      mountEl,
-      saveMgrRef.current,
-      audioMgrRef.current,
-      settingsMgrRef.current.getSettings(),
-      callbacksRef.current
-    );
-    engineRef.current = engine;
+    const support = detectWebGLSupport();
+    if (!support.supported) {
+      setWebglError(
+        support.reason ?? 'WebGL graphics acceleration is required to play BOUNCEBACK.'
+      );
+      return;
+    }
 
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('autostart') === '1') {
-      engine.loadLevel('w1-l1', true);
+    let engine: GameEngine;
+    try {
+      engine = new GameEngine(
+        mountEl,
+        saveMgrRef.current,
+        audioMgrRef.current,
+        settingsMgrRef.current.getSettings(),
+        callbacksRef.current
+      );
+      engineRef.current = engine;
+
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('autostart') === '1') {
+        engine.loadLevel('w1-l1', true);
+      }
+    } catch (err) {
+      const msg =
+        err instanceof Error
+          ? err.message
+          : 'Failed to initialize 3D WebGL renderer.';
+      setWebglError(msg);
+      return;
     }
 
     return () => {
@@ -183,7 +233,7 @@ export default function App() {
   // Title Screen Enter start + Mute (M)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (gameState === 'title' && activeModal === 'none') {
+      if (gameState === 'title' && activeModal === 'none' && !webglError) {
         if (e.code === 'Enter') {
           e.preventDefault();
           handlePlay();
@@ -198,7 +248,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [gameState, activeModal, handlePlay]);
+  }, [gameState, activeModal, webglError, handlePlay]);
 
   const handleToggleMute = () => {
     const nextMuted = !audioMgrRef.current?.isMuted();
@@ -259,6 +309,12 @@ export default function App() {
   const hasContinue = saveMgrRef.current?.hasContinueProgress() ?? false;
   const currentLvl = engineRef.current?.getCurrentLevel() ?? getLevelById(hud.levelId);
   const currentTheme = WORLD_THEMES[currentLvl.worldId];
+  const showTouchControls =
+    gameState === 'playing' &&
+    activeModal === 'none' &&
+    !contextLost &&
+    (settings.touchControlsMode === 'on' ||
+      (settings.touchControlsMode === 'auto' && isTouchDevice));
 
   return (
     <main className="relative w-full h-full overflow-hidden bg-[#0e1116]">
@@ -268,7 +324,66 @@ export default function App() {
         className="absolute inset-0 w-full h-full"
       />
 
-      {gameState === 'title' && activeModal === 'none' && (
+      {webglError && (
+        <div
+          role="alert"
+          className="fixed inset-0 z-50 bg-[#0e1116] flex items-center justify-center p-6"
+        >
+          <div className="hud-panel rounded-lg max-w-md w-full p-7">
+            <div className="text-xs font-mono-num tracking-[0.2em] text-[#ef4444] uppercase">
+              WEBGL GRAPHICS UNAVAILABLE
+            </div>
+            <h1 className="font-display text-2xl font-bold text-[#f3f5f8] mt-1">
+              3D RENDERER COULD NOT START
+            </h1>
+            <p className="text-sm text-[#cfd6e0] mt-2 leading-relaxed">{webglError}</p>
+            <p className="text-xs text-[#9ba5b4] mt-3 leading-relaxed">
+              Enable hardware acceleration in your browser settings or open BOUNCEBACK in an up-to-date Chrome, Edge, Firefox, or Safari browser.
+            </p>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="mt-5 w-full py-2.5 px-4 bg-[#e59a3c] hover:bg-[#eda951] text-[#0e1116] font-display font-bold text-xs tracking-wider rounded cursor-pointer"
+            >
+              RETRY INITIALIZATION
+            </button>
+          </div>
+        </div>
+      )}
+
+      {contextLost && !webglError && (
+        <div
+          role="status"
+          className="fixed inset-0 z-40 bg-[#0a0d12]/85 flex items-center justify-center p-6"
+        >
+          <div className="hud-panel rounded-lg max-w-sm w-full p-6 text-center">
+            <div className="text-xs font-mono-num tracking-widest text-[#e59a3c] uppercase">
+              GRAPHICS CONTEXT INTERRUPTED
+            </div>
+            <p className="text-sm text-[#e6e9ef] mt-2">
+              Restoring 3D WebGL highway scene...
+            </p>
+          </div>
+        </div>
+      )}
+
+      {storageWarning && !webglError && (
+        <div
+          role="status"
+          className="fixed top-3 left-1/2 -translate-x-1/2 z-40 hud-panel border-[#e59a3c]/60 rounded px-4 py-2 text-xs text-[#f5b832] flex items-center gap-3"
+        >
+          <span>{storageWarning}</span>
+          <button
+            type="button"
+            onClick={() => setStorageWarning(null)}
+            className="text-white/80 hover:text-white underline cursor-pointer"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {!webglError && gameState === 'title' && activeModal === 'none' && (
         <TitleScreen
           saveData={saveData}
           hasContinue={hasContinue}
@@ -308,14 +423,25 @@ export default function App() {
         />
       )}
 
-      {gameState === 'playing' && (
+      {!webglError && gameState === 'playing' && (
         <GameHud
           hud={hud}
           bindings={settings.bindings}
           muted={muted}
+          touchControlsActive={showTouchControls}
           onToggleMute={handleToggleMute}
           onRespawn={() => engineRef.current?.loadLevel(hud.levelId, true)}
           onPause={() => engineRef.current?.setGameState('paused')}
+        />
+      )}
+
+      {showTouchControls && (
+        <MobileControls
+          hasInteractPrompt={Boolean(hud.interactPrompt)}
+          canDash={hud.canDash}
+          onMove={(f, r) => engineRef.current?.setTouchMove(f, r)}
+          onAction={(action, pressed) => engineRef.current?.setTouchAction(action, pressed)}
+          onOrbit={(dx, dy) => engineRef.current?.orbitCamera(dx, dy)}
         />
       )}
 

@@ -330,6 +330,29 @@ export function SettingsModal({
                   {settings.invertY ? 'INVERTED' : 'STANDARD'}
                 </button>
               </div>
+
+              <div className="md:col-span-2 flex items-center justify-between pt-2">
+                <div>
+                  <div className="text-xs text-[#b5becb]">Mobile Touch Controls</div>
+                  <div className="text-[11px] text-[#8f9aa8]">On-screen joystick &amp; action buttons</div>
+                </div>
+                <div className="grid grid-cols-3 gap-1.5 bg-white/5 p-1 rounded">
+                  {(['auto', 'on', 'off'] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => onUpdateSettings({ touchControlsMode: mode })}
+                      className={`px-3 py-1.5 text-xs font-display font-semibold uppercase rounded transition-colors cursor-pointer ${
+                        settings.touchControlsMode === mode
+                          ? 'bg-[#e59a3c] text-[#0e1116]'
+                          : 'text-[#b5becb] hover:text-white'
+                      }`}
+                    >
+                      {mode}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           </section>
 

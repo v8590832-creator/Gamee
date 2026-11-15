@@ -34,26 +34,30 @@ export class AudioManager {
     if (typeof window === 'undefined') return;
     const ua = (navigator as unknown as { userActivation?: { hasBeenActive: boolean } }).userActivation;
     if (ua && !ua.hasBeenActive) return;
-    if (!this.ctx) {
-      const AudioCtx =
-        window.AudioContext ||
-        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      if (!AudioCtx) return;
-      this.ctx = new AudioCtx();
-      this.masterGain = this.ctx.createGain();
-      this.musicGain = this.ctx.createGain();
-      this.sfxGain = this.ctx.createGain();
+    try {
+      if (!this.ctx) {
+        const AudioCtx =
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+        if (!AudioCtx) return;
+        this.ctx = new AudioCtx();
+        this.masterGain = this.ctx.createGain();
+        this.musicGain = this.ctx.createGain();
+        this.sfxGain = this.ctx.createGain();
 
-      this.musicGain.connect(this.masterGain);
-      this.sfxGain.connect(this.masterGain);
-      this.masterGain.connect(this.ctx.destination);
+        this.musicGain.connect(this.masterGain);
+        this.sfxGain.connect(this.masterGain);
+        this.masterGain.connect(this.ctx.destination);
 
-      this.applyVolumes();
-      this.initRollingLoop();
-      this.initAmbientPad();
-    }
-    if (this.ctx.state === 'suspended') {
-      void this.ctx.resume();
+        this.applyVolumes();
+        this.initRollingLoop();
+        this.initAmbientPad();
+      }
+      if (this.ctx.state === 'suspended') {
+        void this.ctx.resume().catch(() => {});
+      }
+    } catch {
+      // Browser blocked or lacks Web Audio support; keep game silent without crashing
     }
   }
 

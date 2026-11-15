@@ -329,5 +329,6 @@ export const DEFAULT_SETTINGS: GameSettings = {
   cameraDistance: 8.5,
   cameraSmoothing: 1.0,
   invertY: false,
+  touchControlsMode: 'auto',
   bindings: { ...DEFAULT_BINDINGS },
 };

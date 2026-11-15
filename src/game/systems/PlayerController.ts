@@ -14,6 +14,18 @@ export interface PlayerMoveInput {
   interactPressed: boolean;
 }
 
+export interface TouchInputState {
+  moveForward: number; // -1..1
+  moveRight: number; // -1..1
+  jump: boolean;
+  sprint: boolean;
+  slide: boolean;
+  bounce: boolean;
+  dash: boolean;
+  special: boolean;
+  interact: boolean;
+}
+
 export class PlayerController {
   public position: Vec3 = { x: 0, y: 1, z: 0 };
   public velocity: Vec3 = { x: 0, y: 0, z: 0 };
@@ -88,21 +100,33 @@ export class PlayerController {
     this.prevInteractKey = false;
   }
 
-  public sampleInput(keysPressed: Set<string>, bindings: ControlBindings): PlayerMoveInput {
-    const f =
+  public sampleInput(
+    keysPressed: Set<string>,
+    bindings: ControlBindings,
+    touch?: TouchInputState
+  ): PlayerMoveInput {
+    const kbF =
       (keysPressed.has(bindings.moveForward) || keysPressed.has('ArrowUp') ? 1 : 0) -
       (keysPressed.has(bindings.moveBackward) || keysPressed.has('ArrowDown') ? 1 : 0);
-    const r =
+    const kbR =
       (keysPressed.has(bindings.moveRight) || keysPressed.has('ArrowRight') ? 1 : 0) -
       (keysPressed.has(bindings.moveLeft) || keysPressed.has('ArrowLeft') ? 1 : 0);
 
-    const jumpDown = keysPressed.has(bindings.jump);
-    const sprintDown = keysPressed.has(bindings.sprint) || keysPressed.has('ShiftRight');
-    const slideDown = keysPressed.has(bindings.slide) || keysPressed.has('ControlRight') || keysPressed.has('KeyC');
-    const bounceDown = keysPressed.has(bindings.bounce);
-    const dashDown = keysPressed.has(bindings.dash);
-    const specialDown = keysPressed.has(bindings.special);
-    const interactDown = keysPressed.has(bindings.interact);
+    const f = Math.max(-1, Math.min(1, kbF + (touch?.moveForward ?? 0)));
+    const r = Math.max(-1, Math.min(1, kbR + (touch?.moveRight ?? 0)));
+
+    const jumpDown = keysPressed.has(bindings.jump) || Boolean(touch?.jump);
+    const sprintDown =
+      keysPressed.has(bindings.sprint) || keysPressed.has('ShiftRight') || Boolean(touch?.sprint);
+    const slideDown =
+      keysPressed.has(bindings.slide) ||
+      keysPressed.has('ControlRight') ||
+      keysPressed.has('KeyC') ||
+      Boolean(touch?.slide);
+    const bounceDown = keysPressed.has(bindings.bounce) || Boolean(touch?.bounce);
+    const dashDown = keysPressed.has(bindings.dash) || Boolean(touch?.dash);
+    const specialDown = keysPressed.has(bindings.special) || Boolean(touch?.special);
+    const interactDown = keysPressed.has(bindings.interact) || Boolean(touch?.interact);
 
     const input: PlayerMoveInput = {
       forward: f,
