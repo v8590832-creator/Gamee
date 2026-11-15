@@ -874,6 +874,10 @@ export class GameEngine {
         this.playerController.triggerLandSquash(phys.landedImpact);
         this.animController.triggerOneShot('land', 0.16);
         this.character.triggerImpactShockwave(trailColor, 1.4);
+        if (phys.landedImpact > 16.5) {
+          this.cameraTrauma = Math.min(1, this.cameraTrauma + 0.28);
+          this.audioManager.playFahh('hardLand', 35);
+        }
       }
 
       for (const b of phys.bounceEvents) {
@@ -935,7 +939,7 @@ export class GameEngine {
             const ach = this.achievementManager.evaluateAction('vehicleBounce');
             if (ach) this.showNotice(`Achievement · ${ach.name}`);
           } else if (this.playerController.invulnTimer <= 0) {
-            this.applyPlayerDamage(tv.lane.direction * 6.5, 6.5, 6.0);
+            this.applyPlayerDamage(tv.lane.direction * 6.5, 6.5, 6.0, 'trafficHit');
             this.trafficHitsRun++;
           }
         }
@@ -959,7 +963,7 @@ export class GameEngine {
             this.audioManager.playBounce(1.4);
             this.character.triggerImpactShockwave('#ef4444', 2.8);
           } else if (this.playerController.invulnTimer <= 0) {
-            this.applyPlayerDamage(0, 7.0, 9.0);
+            this.applyPlayerDamage(0, 7.0, 9.0, 'bossHit');
           }
         }
       }
@@ -1071,11 +1075,13 @@ export class GameEngine {
     if (this.playerController.position.y < level.fallLimitY || this.playerController.position.y > ceilY) {
       this.fallsCount += 1;
       this.audioManager.playFall();
+      this.audioManager.playFahh('fall', 45);
       this.respawnAtCheckpoint();
     }
     if (level.timeChallengeSec && this.elapsedRunTime > level.timeChallengeSec) {
       this.fallsCount += 1;
       this.audioManager.playFall();
+      this.audioManager.playFahh('timeout', 45);
       this.restartLevel();
       return;
     }
@@ -1153,7 +1159,12 @@ export class GameEngine {
     }
   }
 
-  private applyPlayerDamage(kx: number, ky: number, kz: number): void {
+  private applyPlayerDamage(
+    kx: number,
+    ky: number,
+    kz: number,
+    reason: 'trafficHit' | 'bossHit' = 'trafficHit'
+  ): void {
     this.playerController.health -= 1;
     this.playerController.invulnTimer = 1.4;
     this.damageTakenRun++;
@@ -1161,8 +1172,20 @@ export class GameEngine {
     this.playerController.velocity.y = ky;
     this.playerController.velocity.z = kz;
     this.audioManager.playDamage();
+    this.audioManager.playFahh(reason, 65);
     this.animController.triggerOneShot('damage', 0.4);
     this.cameraTrauma = Math.min(1, this.cameraTrauma + 0.55);
+    this.particles.spawnBurst(
+      this.playerController.position.x,
+      this.playerController.position.y + 0.4,
+      this.playerController.position.z,
+      14,
+      '#ef4444',
+      7.0,
+      0.45,
+      1.0,
+      2.5
+    );
 
     if (this.playerController.health <= 0) {
       this.fallsCount += 1;

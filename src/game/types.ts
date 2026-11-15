@@ -285,6 +285,8 @@ export interface GameSettings {
   masterVolume: number;
   musicVolume: number;
   sfxVolume: number;
+  muted: boolean;
+  fahhEnabled: boolean;
   mouseSensitivity: number;
   cameraSensitivity: number;
   cameraDistance: number;

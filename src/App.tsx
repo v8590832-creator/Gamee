@@ -110,7 +110,6 @@ export default function App() {
   const [runSummary, setRunSummary] = useState<RunSummary | null>(null);
   const [activeModal, setActiveModal] = useState<ActiveModal>('none');
   const [selectedWorld, setSelectedWorld] = useState<WorldId>(1);
-  const [muted, setMuted] = useState(false);
   const [quitNotice, setQuitNotice] = useState(false);
   const [webglError, setWebglError] = useState<string | null>(null);
   const [contextLost, setContextLost] = useState(false);
@@ -150,8 +149,15 @@ export default function App() {
       setIsTouchDevice(true);
       audioMgrRef.current?.unlock();
     };
+    const onFirstPointer = () => {
+      audioMgrRef.current?.unlock();
+    };
     window.addEventListener('touchstart', onFirstTouch, { passive: true, once: true });
-    return () => window.removeEventListener('touchstart', onFirstTouch);
+    window.addEventListener('pointerdown', onFirstPointer, { passive: true, once: true });
+    return () => {
+      window.removeEventListener('touchstart', onFirstTouch);
+      window.removeEventListener('pointerdown', onFirstPointer);
+    };
   }, []);
 
   useEffect(() => {
@@ -230,6 +236,13 @@ export default function App() {
     [syncSaveSnapshot]
   );
 
+  const handleToggleMute = useCallback(() => {
+    if (!settingsMgrRef.current) return;
+    const next = settingsMgrRef.current.update({ muted: !settingsMgrRef.current.getSettings().muted });
+    setSettings({ ...next });
+    engineRef.current?.updateSettings(next);
+  }, []);
+
   // Title Screen Enter start + Mute (M)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -241,20 +254,12 @@ export default function App() {
         }
       }
       if (e.code === 'KeyM' && activeModal === 'none') {
-        const nextMuted = !audioMgrRef.current?.isMuted();
-        audioMgrRef.current?.setMuted(nextMuted);
-        setMuted(nextMuted);
+        handleToggleMute();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [gameState, activeModal, webglError, handlePlay]);
-
-  const handleToggleMute = () => {
-    const nextMuted = !audioMgrRef.current?.isMuted();
-    audioMgrRef.current?.setMuted(nextMuted);
-    setMuted(nextMuted);
-  };
+  }, [gameState, activeModal, webglError, handlePlay, handleToggleMute]);
 
   const handleUpdateSettings = (patch: Partial<GameSettings>) => {
     if (!settingsMgrRef.current) return;
@@ -427,7 +432,7 @@ export default function App() {
         <GameHud
           hud={hud}
           bindings={settings.bindings}
-          muted={muted}
+          muted={settings.muted}
           touchControlsActive={showTouchControls}
           onToggleMute={handleToggleMute}
           onRespawn={() => engineRef.current?.loadLevel(hud.levelId, true)}
@@ -549,6 +554,9 @@ export default function App() {
           onUpdateSettings={handleUpdateSettings}
           onUpdateBinding={handleUpdateBinding}
           onResetBindings={handleResetBindings}
+          onPreviewFahh={() => {
+            audioMgrRef.current?.previewFahh();
+          }}
           onClose={() => {
             audioMgrRef.current?.playUiClick();
             setActiveModal('none');

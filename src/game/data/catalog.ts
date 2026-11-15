@@ -324,6 +324,8 @@ export const DEFAULT_SETTINGS: GameSettings = {
   masterVolume: 0.75,
   musicVolume: 0.5,
   sfxVolume: 0.85,
+  muted: false,
+  fahhEnabled: true,
   mouseSensitivity: 1.0,
   cameraSensitivity: 1.0,
   cameraDistance: 8.5,

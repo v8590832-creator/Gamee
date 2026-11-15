@@ -1,14 +1,33 @@
 import type { GameSettings } from '../types';
 
+export type FahhTriggerReason =
+  | 'trafficHit'
+  | 'bossHit'
+  | 'fall'
+  | 'hardLand'
+  | 'timeout'
+  | 'preview';
+
+const FAHH_COOLDOWN_MS = 2600;
+const FAHH_PREVIEW_COOLDOWN_MS = 500;
+
+function resolveFahhAssetUrl(): string {
+  const metaEnv = (import.meta as unknown as { env?: { BASE_URL?: string } }).env;
+  const base = metaEnv?.BASE_URL ?? '/';
+  const normalizedBase = base.endsWith('/') ? base : `${base}/`;
+  return `${normalizedBase}assets/aistudio/fahhh_KcgAXfs_21994c56.mp3`;
+}
+
 /**
- * 100% procedural Web Audio synthesizer for BOUNCEBACK: THE GREAT ROAD ADVENTURE.
- * Indian pentatonic raga-inspired synth arpeggio + footsteps + horns + monsoon thunder.
+ * Centralized Web Audio engine for BOUNCEBACK: THE GREAT ROAD ADVENTURE.
+ * Combines Indian pentatonic synth music + gameplay SFX + preloaded FAHH signature audio.
  */
 export class AudioManager {
   private ctx: AudioContext | null = null;
   private masterGain: GainNode | null = null;
   private musicGain: GainNode | null = null;
   private sfxGain: GainNode | null = null;
+  private fahhGain: GainNode | null = null;
 
   private rollOsc: OscillatorNode | null = null;
   private rollFilter: BiquadFilterNode | null = null;
@@ -19,19 +38,52 @@ export class AudioManager {
   private padFilter: BiquadFilterNode | null = null;
   private padGain: GainNode | null = null;
 
-  private muted = false;
+  private muted: boolean;
   private settings: GameSettings;
   private baseHz = 55;
   private musicStep = 0;
   private musicTimer: number | null = null;
   private footstepAccum = 0;
+  private disposed = false;
+
+  // FAHH asset caching, anti-spam cooldown, and overlap protection
+  private readonly fahhUrl: string;
+  private fahhRawPromise: Promise<ArrayBuffer | null> | null = null;
+  private fahhRawBuffer: ArrayBuffer | null = null;
+  private fahhAudioBuffer: AudioBuffer | null = null;
+  private fahhDecodingPromise: Promise<AudioBuffer | null> | null = null;
+  private fahhUnavailable = false;
+  private fahhActiveSource: AudioBufferSourceNode | null = null;
+  private fahhFallbackEl: HTMLAudioElement | null = null;
+  private lastFahhPlayedAtMs = -Infinity;
+  private pendingFahhTimers = new Set<number>();
 
   constructor(settings: GameSettings) {
     this.settings = settings;
+    this.muted = Boolean(settings.muted);
+    this.fahhUrl = resolveFahhAssetUrl();
+    if (typeof window !== 'undefined') {
+      if (window.location?.protocol === 'file:') {
+        this.initFallbackAudioElement();
+      } else if (typeof fetch === 'function') {
+        void this.preloadFahh();
+      }
+    }
+  }
+
+  private initFallbackAudioElement(): void {
+    if (this.disposed || this.fahhUnavailable || typeof Audio === 'undefined') return;
+    if (!this.fahhFallbackEl) {
+      this.fahhFallbackEl = new Audio(this.fahhUrl);
+      this.fahhFallbackEl.preload = 'auto';
+      this.fahhFallbackEl.addEventListener('error', () => {
+        this.fahhUnavailable = true;
+      });
+    }
   }
 
   public unlock(): void {
-    if (typeof window === 'undefined') return;
+    if (this.disposed || typeof window === 'undefined') return;
     const ua = (navigator as unknown as { userActivation?: { hasBeenActive: boolean } }).userActivation;
     if (ua && !ua.hasBeenActive) return;
     try {
@@ -44,9 +96,11 @@ export class AudioManager {
         this.masterGain = this.ctx.createGain();
         this.musicGain = this.ctx.createGain();
         this.sfxGain = this.ctx.createGain();
+        this.fahhGain = this.ctx.createGain();
 
         this.musicGain.connect(this.masterGain);
         this.sfxGain.connect(this.masterGain);
+        this.fahhGain.connect(this.sfxGain);
         this.masterGain.connect(this.ctx.destination);
 
         this.applyVolumes();
@@ -56,18 +110,93 @@ export class AudioManager {
       if (this.ctx.state === 'suspended') {
         void this.ctx.resume().catch(() => {});
       }
+      if (
+        !this.fahhAudioBuffer &&
+        !this.fahhUnavailable &&
+        window.location?.protocol !== 'file:'
+      ) {
+        void this.decodeFahhBuffer();
+      }
     } catch {
       // Browser blocked or lacks Web Audio support; keep game silent without crashing
     }
   }
 
+  public async preloadFahh(): Promise<void> {
+    if (
+      this.disposed ||
+      this.fahhUnavailable ||
+      typeof fetch !== 'function' ||
+      (typeof window !== 'undefined' && window.location?.protocol === 'file:')
+    ) {
+      return;
+    }
+    if (!this.fahhRawPromise) {
+      this.fahhRawPromise = fetch(this.fahhUrl)
+        .then(async (res) => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const buf = await res.arrayBuffer();
+          this.fahhRawBuffer = buf;
+          return buf;
+        })
+        .catch(() => {
+          this.fahhUnavailable = true;
+          return null;
+        });
+    }
+    const raw = await this.fahhRawPromise;
+    if (raw && this.ctx && !this.fahhAudioBuffer) {
+      await this.decodeFahhBuffer();
+    }
+  }
+
+  private async decodeFahhBuffer(): Promise<AudioBuffer | null> {
+    if (
+      this.disposed ||
+      this.fahhUnavailable ||
+      !this.ctx ||
+      (typeof window !== 'undefined' && window.location?.protocol === 'file:')
+    ) {
+      return null;
+    }
+    if (this.fahhAudioBuffer) return this.fahhAudioBuffer;
+    if (this.fahhDecodingPromise) return this.fahhDecodingPromise;
+
+    this.fahhDecodingPromise = (async () => {
+      try {
+        if (!this.fahhRawBuffer) {
+          await this.preloadFahh();
+        }
+        if (!this.fahhRawBuffer || !this.ctx || this.disposed) return null;
+        const decoded = await this.ctx.decodeAudioData(this.fahhRawBuffer.slice(0));
+        this.fahhAudioBuffer = decoded;
+        return decoded;
+      } catch {
+        // Unsupported codec or corrupt buffer; fall back to HTMLAudioElement if possible
+        return null;
+      } finally {
+        this.fahhDecodingPromise = null;
+      }
+    })();
+
+    return this.fahhDecodingPromise;
+  }
+
   public updateSettings(settings: GameSettings): void {
     this.settings = settings;
+    this.muted = Boolean(settings.muted);
+    if (!settings.fahhEnabled || this.muted) {
+      this.stopActiveFahh();
+    }
     this.applyVolumes();
   }
 
   public setMuted(muted: boolean): void {
     this.muted = muted;
+    this.settings = { ...this.settings, muted };
+    if (muted) {
+      this.stopActiveFahh();
+    }
     this.applyVolumes();
   }
 
@@ -75,13 +204,154 @@ export class AudioManager {
     return this.muted;
   }
 
+  public isFahhEnabled(): boolean {
+    return Boolean(this.settings.fahhEnabled);
+  }
+
+  public canTriggerFahh(reason: FahhTriggerReason, nowMs = Date.now()): boolean {
+    if (this.disposed || this.fahhUnavailable) return false;
+    if (this.muted || !this.settings.fahhEnabled) return false;
+    if (this.settings.masterVolume <= 0.001 || this.settings.sfxVolume <= 0.001) return false;
+    const cooldown = reason === 'preview' ? FAHH_PREVIEW_COOLDOWN_MS : FAHH_COOLDOWN_MS;
+    return nowMs - this.lastFahhPlayedAtMs >= cooldown;
+  }
+
+  public playFahh(reason: FahhTriggerReason, delayMs = 0, nowMs = Date.now()): boolean {
+    if (!this.canTriggerFahh(reason, nowMs)) return false;
+    this.lastFahhPlayedAtMs = nowMs;
+    this.unlock();
+
+    const trigger = () => {
+      if (this.disposed || this.muted || !this.settings.fahhEnabled) return;
+      void this.dispatchFahhAudio(reason);
+    };
+
+    if (delayMs > 0 && typeof window !== 'undefined') {
+      const id = window.setTimeout(() => {
+        this.pendingFahhTimers.delete(id);
+        trigger();
+      }, delayMs);
+      this.pendingFahhTimers.add(id);
+    } else {
+      trigger();
+    }
+    return true;
+  }
+
+  public previewFahh(): boolean {
+    return this.playFahh('preview', 0);
+  }
+
+  private async dispatchFahhAudio(reason: FahhTriggerReason): Promise<void> {
+    if (this.disposed || this.fahhUnavailable || this.muted || !this.settings.fahhEnabled) return;
+
+    if (this.ctx && this.fahhGain) {
+      if (this.ctx.state === 'suspended') {
+        try {
+          await this.ctx.resume();
+        } catch {
+          // Ignore resume failure
+        }
+      }
+      const buffer = this.fahhAudioBuffer ?? (await this.decodeFahhBuffer());
+      if (buffer && this.ctx && this.fahhGain && !this.disposed && !this.muted && this.settings.fahhEnabled) {
+        this.stopActiveFahh();
+        const source = this.ctx.createBufferSource();
+        source.buffer = buffer;
+        // Preserve recognizable natural voice: tiny +/-1.5% micro-variation on gameplay hits, exact 1.0 on preview
+        const rate =
+          reason === 'preview' ? 1.0 : 0.985 + Math.random() * 0.03;
+        source.playbackRate.value = rate;
+        source.connect(this.fahhGain);
+        source.onended = () => {
+          if (this.fahhActiveSource === source) {
+            this.fahhActiveSource = null;
+          }
+          try {
+            source.disconnect();
+          } catch {
+            // Already disconnected
+          }
+        };
+        this.fahhActiveSource = source;
+        source.start(0);
+        return;
+      }
+    }
+
+    // Fallback to single reusable HTMLAudioElement if Web Audio decode unavailable
+    if (typeof Audio !== 'undefined' && !this.fahhUnavailable) {
+      try {
+        if (!this.fahhFallbackEl) {
+          this.fahhFallbackEl = new Audio(this.fahhUrl);
+          this.fahhFallbackEl.preload = 'auto';
+          this.fahhFallbackEl.addEventListener('error', () => {
+            this.fahhUnavailable = true;
+          });
+        }
+        this.fahhFallbackEl.pause();
+        this.fahhFallbackEl.currentTime = 0;
+        this.fahhFallbackEl.muted = this.muted;
+        this.fahhFallbackEl.volume = Math.max(
+          0,
+          Math.min(1, this.settings.masterVolume * this.settings.sfxVolume * 0.95)
+        );
+        await this.fahhFallbackEl.play();
+      } catch {
+        // Gracefully ignore browser autoplay or missing codec failures
+      }
+    }
+  }
+
+  private stopActiveFahh(): void {
+    this.clearPendingFahhTimers();
+    if (this.fahhActiveSource) {
+      try {
+        this.fahhActiveSource.stop();
+      } catch {
+        // Ignore if already stopped
+      }
+      try {
+        this.fahhActiveSource.disconnect();
+      } catch {
+        // Ignore disconnect errors
+      }
+      this.fahhActiveSource = null;
+    }
+    if (this.fahhFallbackEl) {
+      try {
+        this.fahhFallbackEl.pause();
+        this.fahhFallbackEl.currentTime = 0;
+      } catch {
+        // Ignore HTMLAudio errors
+      }
+    }
+  }
+
+  private clearPendingFahhTimers(): void {
+    if (typeof window !== 'undefined') {
+      for (const id of this.pendingFahhTimers) {
+        window.clearTimeout(id);
+      }
+    }
+    this.pendingFahhTimers.clear();
+  }
+
   private applyVolumes(): void {
-    if (!this.ctx || !this.masterGain || !this.musicGain || !this.sfxGain) return;
+    if (this.fahhFallbackEl) {
+      this.fahhFallbackEl.muted = this.muted;
+      this.fahhFallbackEl.volume = Math.max(
+        0,
+        Math.min(1, this.settings.masterVolume * this.settings.sfxVolume * 0.95)
+      );
+    }
+    if (!this.ctx || !this.masterGain || !this.musicGain || !this.sfxGain || !this.fahhGain) return;
     const now = this.ctx.currentTime;
     const master = this.muted ? 0 : this.settings.masterVolume;
     this.masterGain.gain.setTargetAtTime(master, now, 0.04);
     this.musicGain.gain.setTargetAtTime(this.settings.musicVolume * 0.36, now, 0.08);
     this.sfxGain.gain.setTargetAtTime(this.settings.sfxVolume * 0.72, now, 0.04);
+    this.fahhGain.gain.setTargetAtTime(this.settings.fahhEnabled ? 1.18 : 0, now, 0.03);
   }
 
   private initRollingLoop(): void {
@@ -138,7 +408,6 @@ export class AudioManager {
         const noteHz = this.baseHz * 2 * ratio;
         this.playTone(noteHz, 0.55, 'triangle', 0.085, this.musicGain, 0.02);
         if (isBeat) {
-          // Subtle tabla-like low percussive pulse
           this.playTone(this.baseHz * 1.5, 0.14, 'sine', 0.09, this.musicGain, 0.005, this.baseHz * 0.9);
         }
       }, 650);
@@ -165,7 +434,6 @@ export class AudioManager {
       this.padFilter.frequency.setTargetAtTime(specialActive ? 220 : 420, now, 0.12);
     }
 
-    // Crisp rhythmic footsteps while walking/running/sprinting
     if (grounded && !isSliding && speed > 1.8 && this.sfxGain) {
       const interval = Math.max(0.18, 0.42 - speed * 0.015);
       this.footstepAccum += dt;
@@ -179,6 +447,7 @@ export class AudioManager {
   }
 
   public silenceLoops(): void {
+    this.clearPendingFahhTimers();
     if (!this.ctx || !this.rollGain) return;
     this.rollGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.03);
   }
@@ -293,7 +562,7 @@ export class AudioManager {
     if (!this.sfxGain) return;
     this.playTone(392, 0.3, 'sine', 0.2, this.sfxGain, 0.01);
     setTimeout(() => {
-      if (this.sfxGain) this.playTone(587.33, 0.4, 'sine', 0.22, this.sfxGain, 0.01);
+      if (this.sfxGain && !this.disposed) this.playTone(587.33, 0.4, 'sine', 0.22, this.sfxGain, 0.01);
     }, 90);
   }
 
@@ -315,7 +584,7 @@ export class AudioManager {
     const notes = [440, 554.37, 659.25, 880, 1046.5];
     notes.forEach((hz, i) => {
       setTimeout(() => {
-        if (this.sfxGain) this.playTone(hz, 0.45, 'triangle', 0.22, this.sfxGain, 0.01);
+        if (this.sfxGain && !this.disposed) this.playTone(hz, 0.45, 'triangle', 0.22, this.sfxGain, 0.01);
       }, i * 90);
     });
   }
@@ -327,13 +596,23 @@ export class AudioManager {
   }
 
   public dispose(): void {
+    this.disposed = true;
+    this.stopActiveFahh();
     if (this.musicTimer !== null && typeof window !== 'undefined') {
       window.clearInterval(this.musicTimer);
       this.musicTimer = null;
+    }
+    if (this.fahhFallbackEl) {
+      this.fahhFallbackEl.src = '';
+      this.fahhFallbackEl = null;
     }
     if (this.ctx) {
       void this.ctx.close();
       this.ctx = null;
     }
+    this.masterGain = null;
+    this.musicGain = null;
+    this.sfxGain = null;
+    this.fahhGain = null;
   }
 }

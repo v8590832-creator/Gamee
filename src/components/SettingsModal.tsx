@@ -6,6 +6,7 @@ interface SettingsModalProps {
   onUpdateSettings: (patch: Partial<GameSettings>) => void;
   onUpdateBinding: (action: keyof ControlBindings, code: string) => void;
   onResetBindings: () => void;
+  onPreviewFahh: () => void;
   onClose: () => void;
 }
 
@@ -30,6 +31,7 @@ export function SettingsModal({
   onUpdateSettings,
   onUpdateBinding,
   onResetBindings,
+  onPreviewFahh,
   onClose,
 }: SettingsModalProps) {
   const [capturing, setCapturing] = useState<keyof ControlBindings | null>(null);
@@ -249,6 +251,58 @@ export function SettingsModal({
                   onChange={(e) => onUpdateSettings({ sfxVolume: Number(e.target.value) })}
                   className="w-full accent-[#e59a3c]"
                 />
+              </div>
+            </div>
+
+            <div className="mt-5 pt-4 border-t border-white/10 grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="px-3.5 py-2.5 rounded bg-white/[0.04] border border-white/10 flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-xs font-medium text-[#eef1f6]">All Audio Output</div>
+                  <div className="text-[11px] text-[#8f9aa8]">Quick mute / unmute [M]</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onUpdateSettings({ muted: !settings.muted })}
+                  className={`px-3.5 py-1.5 rounded border text-xs font-display font-semibold tracking-wider whitespace-nowrap shrink-0 cursor-pointer ${
+                    settings.muted
+                      ? 'bg-[#ef4444]/15 border-[#ef4444]/60 text-[#fca5a5]'
+                      : 'bg-[#58c477]/15 border-[#58c477]/60 text-[#58c477]'
+                  }`}
+                >
+                  {settings.muted ? 'MUTED' : 'UNMUTED'}
+                </button>
+              </div>
+
+              <div className="px-3.5 py-2.5 rounded bg-white/[0.04] border border-white/10 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-xs font-medium text-[#eef1f6]">FAHH Sound Effect</div>
+                  <div className="text-[11px] text-[#8f9aa8]">Comedic impact &amp; tumble reaction</div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    disabled={settings.muted || !settings.fahhEnabled}
+                    onClick={onPreviewFahh}
+                    className={`px-3 py-1.5 rounded text-xs font-display font-semibold tracking-wider whitespace-nowrap transition-colors ${
+                      settings.muted || !settings.fahhEnabled
+                        ? 'bg-white/5 text-[#6f7a88] cursor-not-allowed'
+                        : 'bg-white/12 hover:bg-white/22 text-white cursor-pointer'
+                    }`}
+                  >
+                    TEST FAHH
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onUpdateSettings({ fahhEnabled: !settings.fahhEnabled })}
+                    className={`px-3.5 py-1.5 rounded border text-xs font-display font-semibold tracking-wider whitespace-nowrap cursor-pointer ${
+                      settings.fahhEnabled
+                        ? 'bg-[#e59a3c]/20 border-[#e59a3c] text-[#e59a3c]'
+                        : 'bg-white/5 border-white/15 text-[#9ba5b4]'
+                    }`}
+                  >
+                    {settings.fahhEnabled ? 'ENABLED' : 'DISABLED'}
+                  </button>
+                </div>
               </div>
             </div>
           </section>
