@@ -1,0 +1,97 @@
+[gd_scene load_steps=17 format=3]
+
+[ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
+[ext_resource type="PackedScene" path="res://scenes/Player.tscn" id="2_player"]
+[ext_resource type="PackedScene" path="res://scenes/Road.tscn" id="3_road"]
+[ext_resource type="PackedScene" path="res://scenes/Obstacle.tscn" id="4_obstacle"]
+[ext_resource type="PackedScene" path="res://scenes/Coin.tscn" id="5_coin"]
+[ext_resource type="PackedScene" path="res://scenes/PowerUp.tscn" id="6_powerup"]
+[ext_resource type="Script" path="res://scripts/scenery_builder.gd" id="7_scenery"]
+[ext_resource type="PackedScene" path="res://scenes/GameHud.tscn" id="8_hud"]
+[ext_resource type="PackedScene" path="res://scenes/MainMenu.tscn" id="9_menu"]
+[ext_resource type="PackedScene" path="res://scenes/PauseMenu.tscn" id="10_pause"]
+[ext_resource type="PackedScene" path="res://scenes/GameOver.tscn" id="11_gameover"]
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_init"]
+sky_top_color = Color(0.176, 0.431, 0.639, 1)
+sky_horizon_color = Color(0.91, 0.769, 0.604, 1)
+ground_horizon_color = Color(0.851, 0.749, 0.631, 1)
+
+[sub_resource type="Sky" id="Sky_init"]
+sky_material = SubResource("ProceduralSkyMaterial_init")
+
+[sub_resource type="Environment" id="Environment_init"]
+background_mode = 2
+sky = SubResource("Sky_init")
+tonemap_mode = 3
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_burst"]
+albedo_color = Color(0.898, 0.604, 0.235, 1)
+emission_enabled = true
+emission = Color(0.898, 0.604, 0.235, 1)
+emission_energy_multiplier = 1.4
+
+[sub_resource type="SphereMesh" id="SphereMesh_burst"]
+material = SubResource("StandardMaterial3D_burst")
+radius = 0.14
+height = 0.28
+
+[node name="Main" type="Node3D"]
+script = ExtResource("1_main")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_init")
+
+[node name="KeyLight" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.829, 0.439, -0.346, 0, 0.619, 0.785, 0.559, -0.651, 0.513, 22, 34, 18)
+light_color = Color(1, 0.941, 0.82, 1)
+light_energy = 1.62
+shadow_enabled = true
+directional_shadow_max_distance = 140.0
+
+[node name="RimLight" type="DirectionalLight3D" parent="."]
+transform = Transform3D(-0.866, 0.25, -0.433, 0, 0.866, 0.5, 0.5, 0.433, -0.75, -18, 16, -24)
+light_color = Color(0.68, 0.82, 1, 1)
+light_energy = 0.38
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.94, 0.342, 0, -0.342, 0.94, 0, 5, 9)
+current = true
+fov = 62.0
+far = 420.0
+
+[node name="Player" parent="." instance=ExtResource("2_player")]
+
+[node name="WorldRoot" type="Node3D" parent="."]
+
+[node name="RoadSystem" parent="WorldRoot" instance=ExtResource("3_road")]
+
+[node name="ObstacleSystem" parent="WorldRoot" instance=ExtResource("4_obstacle")]
+
+[node name="CollectibleSystem" parent="WorldRoot" instance=ExtResource("5_coin")]
+
+[node name="PowerUpSystem" parent="WorldRoot" instance=ExtResource("6_powerup")]
+
+[node name="SceneryBuilder" type="Node3D" parent="WorldRoot"]
+script = ExtResource("7_scenery")
+
+[node name="BurstParticles" type="CPUParticles3D" parent="WorldRoot"]
+emitting = false
+amount = 18
+lifetime = 0.55
+one_shot = true
+explosiveness = 0.9
+mesh = SubResource("SphereMesh_burst")
+direction = Vector3(0, 1, 0)
+spread = 110.0
+initial_velocity_min = 3.5
+initial_velocity_max = 7.5
+gravity = Vector3(0, -14, 0)
+
+[node name="GameHud" parent="." instance=ExtResource("8_hud")]
+
+[node name="MainMenu" parent="." instance=ExtResource("9_menu")]
+
+[node name="PauseMenu" parent="." instance=ExtResource("10_pause")]
+
+[node name="GameOver" parent="." instance=ExtResource("11_gameover")]

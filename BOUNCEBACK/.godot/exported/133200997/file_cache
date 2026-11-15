@@ -1,0 +1,11 @@
+res://assets/animations/character_poses.tres::8968743a748b9cfba961f6c76fc358a5::1794731190::res://.godot/exported/133200997/export-2f7ad44681656e52588b7faa07cf3350-character_poses.res
+res://scenes/Coin.tscn::c3827968d3c4a25bc25b7b76417f7c14::1794731563::res://.godot/exported/133200997/export-84eb3c9e60cf06d76a09ab53221af43e-Coin.scn
+res://scenes/GameHud.tscn::bca8360c446ea60678bdb59be18b912b::1794731564::res://.godot/exported/133200997/export-c14f2091b00934f0d055e19db647793f-GameHud.scn
+res://scenes/GameOver.tscn::69c6a72c67414a133f67611c3c6c692f::1794731570::res://.godot/exported/133200997/export-5e2441304cbe3362f929858a53beba09-GameOver.scn
+res://scenes/Main.tscn::97c9a02493f1e4ba7313d122ac130b84::1794731582::res://.godot/exported/133200997/export-4a24720ee5e787dbe30abc634fa3679d-Main.scn
+res://scenes/MainMenu.tscn::5813fd091e0742c64d0ab3065aa6a905::1794731565::res://.godot/exported/133200997/export-23c8b2a48d59a0cd018bd8ad5ce7794c-MainMenu.scn
+res://scenes/Obstacle.tscn::fa314ff27c6f8543779c887ce8653866::1794731564::res://.godot/exported/133200997/export-5422130146136a6bcca3a1a5b3d765c2-Obstacle.scn
+res://scenes/PauseMenu.tscn::59e03743140ac24b1f62080772d28d1e::1794731565::res://.godot/exported/133200997/export-322493d365676aa8c0336579f6935b26-PauseMenu.scn
+res://scenes/Player.tscn::77f7d949dd31ec3012ae028f1d35343c::1794731562::res://.godot/exported/133200997/export-e8220e74d1354b9e6b168b513689419c-Player.scn
+res://scenes/PowerUp.tscn::b9aee010bf52332c7acd3b965dd59bc3::1794731564::res://.godot/exported/133200997/export-aa3a0106428a0911bcf33d1eff67e363-PowerUp.scn
+res://scenes/Road.tscn::c6151affa0b651d2a26223286a4cd2ea::1794731563::res://.godot/exported/133200997/export-4d5ca102821d60bf0a9738e2e289df0c-Road.scn

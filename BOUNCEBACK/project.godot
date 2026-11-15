@@ -1,0 +1,39 @@
+; Engine configuration file.
+; Generated for Godot Engine 4.x (4.2 / 4.3 / 4.4 compatible)
+
+config_version=5
+
+[application]
+
+config/name="BOUNCEBACK: THE GREAT ROAD ADVENTURE"
+config/description="One Man. Countless Roads. Unlimited Bounces. Handcrafted 3D Indian road arcade adventure."
+run/main_scene="res://scenes/Main.tscn"
+config/features=PackedStringArray("4.3", "GL Compatibility")
+config/icon="res://icon.svg"
+
+[autoload]
+
+SaveManager="*res://scripts/autoload/save_manager.gd"
+AudioManager="*res://scripts/autoload/audio_manager.gd"
+GameManager="*res://scripts/autoload/game_manager.gd"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+
+[input_devices]
+
+pointing/emulate_touch_from_mouse=false
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/vram_compression/import_s3tc_bptc=true
+textures/vram_compression/import_etc2_astc=true
+environment/defaults/default_clear_color=Color(0.055, 0.067, 0.086, 1)
+lights_and_shadows/directional_shadow/size=2048
+anti_aliasing/quality/msaa_3d=1

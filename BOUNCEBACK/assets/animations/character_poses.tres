@@ -1,0 +1,7 @@
+[gd_resource type="Resource" format=3]
+
+[resource]
+metadata/description = "Procedural articulation constants matching CharacterAnimationController"
+metadata/states = PackedStringArray("idle", "walk", "run", "sprint", "jump", "doubleJump", "bounce", "land", "slide", "fall", "dash", "victory", "damage", "pickup", "special", "levelComplete")
+metadata/stride_frequency = 0.85
+metadata/blink_interval_sec = 3.2
