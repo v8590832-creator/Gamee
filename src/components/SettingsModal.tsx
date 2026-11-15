@@ -69,9 +69,9 @@ export function SettingsModal({
       aria-label="Settings"
       className="fixed inset-0 z-50 bg-[#0a0d12]/84 flex items-center justify-center p-4 md:p-8"
     >
-      <div className="hud-panel rounded-lg w-full max-w-3xl max-h-[88vh] flex flex-col overflow-hidden">
+      <div className="hud-panel rounded-lg w-full max-w-3xl max-h-[88vh] flex flex-col overflow-hidden animate-modal-in">
         <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
-          <h2 className="font-display text-2xl font-bold text-[#f3f5f8] tracking-wide">
+          <h2 className="font-display text-2xl font-bold text-[#f3efe6] tracking-wide">
             SETTINGS
           </h2>
           <button

@@ -10,13 +10,13 @@ export function CreditsModal({ onClose }: CreditsModalProps) {
       aria-label="Credits"
       className="fixed inset-0 z-50 bg-[#0a0d12]/84 flex items-center justify-center p-4 md:p-8"
     >
-      <div className="hud-panel rounded-lg w-full max-w-xl p-7">
+      <div className="hud-panel rounded-lg w-full max-w-xl p-7 animate-modal-in">
         <div className="flex items-center justify-between border-b border-white/10 pb-4">
           <div>
             <div className="text-[11px] font-mono-num tracking-[0.2em] text-[#e59a3c] uppercase">
               PRODUCTION CREDITS
             </div>
-            <h2 className="font-display text-2xl font-bold text-[#f3f5f8] mt-0.5">
+            <h2 className="font-display text-2xl font-bold text-[#f3efe6] mt-0.5">
               BOUNCEBACK: THE GREAT ROAD ADVENTURE
             </h2>
           </div>

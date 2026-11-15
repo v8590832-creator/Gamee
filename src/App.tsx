@@ -3,6 +3,7 @@ import { ChallengesModal } from './components/ChallengesModal';
 import { CreditsModal } from './components/CreditsModal';
 import { CustomizationModal } from './components/CustomizationModal';
 import { GameHud } from './components/GameHud';
+import { LoadingOverlay } from './components/LoadingOverlay';
 import { MobileControls } from './components/MobileControls';
 import { PauseModal, VictoryModal } from './components/PauseVictoryModals';
 import { ProfileModal } from './components/ProfileModal';
@@ -117,6 +118,16 @@ export default function App() {
     () => saveMgrRef.current?.lastError ?? null
   );
   const [isTouchDevice, setIsTouchDevice] = useState<boolean>(() => detectTouchCapable());
+  const [dispatchingLevelId, setDispatchingLevelId] = useState<string | null>(null);
+  const dispatchTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (dispatchTimerRef.current !== null) {
+        window.clearTimeout(dispatchTimerRef.current);
+      }
+    };
+  }, []);
 
   const syncSaveSnapshot = useCallback(() => {
     if (saveMgrRef.current) {
@@ -205,15 +216,30 @@ export default function App() {
     };
   }, []);
 
+  const dispatchLevel = useCallback(
+    (levelId: string) => {
+      if (dispatchTimerRef.current !== null) {
+        window.clearTimeout(dispatchTimerRef.current);
+      }
+      setDispatchingLevelId(levelId);
+      saveMgrRef.current?.setLastPlayedLevel(levelId);
+      syncSaveSnapshot();
+      engineRef.current?.loadLevel(levelId, true);
+      dispatchTimerRef.current = window.setTimeout(() => {
+        setDispatchingLevelId(null);
+        dispatchTimerRef.current = null;
+      }, 420);
+    },
+    [syncSaveSnapshot]
+  );
+
   const handlePlay = useCallback(() => {
     audioMgrRef.current?.playUiClick();
     setActiveModal('none');
     setQuitNotice(false);
     setRunSummary(null);
-    saveMgrRef.current?.setLastPlayedLevel('w1-l1');
-    syncSaveSnapshot();
-    engineRef.current?.loadLevel('w1-l1', true);
-  }, [syncSaveSnapshot]);
+    dispatchLevel('w1-l1');
+  }, [dispatchLevel]);
 
   const handleContinue = useCallback(() => {
     audioMgrRef.current?.playUiClick();
@@ -221,19 +247,17 @@ export default function App() {
     setQuitNotice(false);
     setRunSummary(null);
     const lvlId = saveMgrRef.current?.getData().lastPlayedLevelId ?? 'w1-l1';
-    engineRef.current?.loadLevel(lvlId, true);
-  }, []);
+    dispatchLevel(lvlId);
+  }, [dispatchLevel]);
 
   const handleLaunchLevel = useCallback(
     (levelId: string) => {
       audioMgrRef.current?.playUiClick();
       setActiveModal('none');
       setRunSummary(null);
-      saveMgrRef.current?.setLastPlayedLevel(levelId);
-      syncSaveSnapshot();
-      engineRef.current?.loadLevel(levelId, true);
+      dispatchLevel(levelId);
     },
-    [syncSaveSnapshot]
+    [dispatchLevel]
   );
 
   const handleToggleMute = useCallback(() => {
@@ -572,6 +596,21 @@ export default function App() {
           }}
         />
       )}
+
+      {dispatchingLevelId && !webglError && (() => {
+        const dLvl = getLevelById(dispatchingLevelId);
+        const dTheme = WORLD_THEMES[dLvl.worldId];
+        return (
+          <LoadingOverlay
+            worldNumber={dLvl.worldId}
+            worldName={dTheme.name}
+            levelNumber={dLvl.levelNumber}
+            levelName={dLvl.name}
+            subtitle={dLvl.subtitle}
+            accentColor={dTheme.accentColor}
+          />
+        );
+      })()}
     </main>
   );
 }

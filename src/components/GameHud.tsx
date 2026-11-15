@@ -34,44 +34,70 @@ export function GameHud({
   onRespawn,
   onPause,
 }: GameHudProps) {
+  const lowHealth = hud.health === 1;
+
   return (
     <div className="fixed inset-0 z-10 pointer-events-none flex flex-col justify-between p-2.5 sm:p-4 md:p-6">
-      {/* Subtle peripheral accent during Highway Surge */}
+      {/* Subtle peripheral accent during Highway Surge or critical 1 HP */}
       {hud.specialActive && (
         <div
           className="fixed inset-0 pointer-events-none border-4 border-[#58c477]/45"
           aria-hidden="true"
         />
       )}
+      {lowHealth && !hud.specialActive && (
+        <div
+          className="fixed inset-0 pointer-events-none"
+          style={{ boxShadow: 'inset 0 0 80px rgba(224, 68, 52, 0.35)' }}
+          aria-hidden="true"
+        />
+      )}
 
       {/* Top HUD Bar */}
       <div className="flex flex-wrap items-start justify-between gap-2 md:gap-4">
-        {/* Top-Left: World, Stage, Checkpoint & Health Hearts */}
-        <div className="hud-panel border-l-2 border-l-[#e59a3c] rounded px-3 py-2 md:px-4 md:py-2.5 max-w-[230px] sm:max-w-xs">
-          <div className="text-[10px] font-semibold tracking-[0.16em] text-[#e59a3c] uppercase truncate">
+        {/* Top-Left: Highway Stage Plaque & Safety Helmet Vitality Sockets */}
+        <div className="relative hud-panel rounded px-4 py-2.5 md:px-4.5 md:py-3 max-w-[248px] sm:max-w-xs">
+          <span
+            aria-hidden="true"
+            className="absolute top-1.5 left-1.5 w-2 h-2 border-t border-l border-[#e59a3c]/60"
+          />
+          <span
+            aria-hidden="true"
+            className="absolute bottom-1.5 right-1.5 w-2 h-2 border-b border-r border-[#e59a3c]/60"
+          />
+          <div className="text-[10px] font-mono-num font-semibold tracking-[0.16em] text-[#e59a3c] uppercase truncate">
             {hud.worldName}
           </div>
-          <div className="font-display text-sm sm:text-lg font-bold text-[#f3f5f8] leading-tight mt-0.5 truncate">
+          <div className="font-display text-sm sm:text-lg font-bold text-[#f3efe6] leading-tight mt-0.5 truncate">
             {hud.levelName}
           </div>
-          <div className="mt-1 flex items-center justify-between gap-2 sm:gap-3">
+          <div className="mt-1.5 flex items-center justify-between gap-2 sm:gap-3">
             <div className="flex items-center gap-1" aria-label={`Health ${hud.health} of ${hud.maxHealth}`}>
-              {Array.from({ length: hud.maxHealth }).map((_, idx) => (
-                <svg
-                  key={idx}
-                  viewBox="0 0 24 24"
-                  className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${idx < hud.health ? 'text-[#ef4444]' : 'text-white/15'}`}
-                  aria-hidden="true"
-                >
-                  <path
-                    fill="currentColor"
-                    d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"
-                  />
-                </svg>
-              ))}
+              {Array.from({ length: hud.maxHealth }).map((_, idx) => {
+                const active = idx < hud.health;
+                return (
+                  <svg
+                    key={idx}
+                    viewBox="0 0 24 24"
+                    className={`w-4 h-4 transition-colors ${
+                      active
+                        ? lowHealth
+                          ? 'text-[#ef4444]'
+                          : 'text-[#f5b832]'
+                        : 'text-white/15'
+                    }`}
+                    aria-hidden="true"
+                  >
+                    <path
+                      fill="currentColor"
+                      d="M12 4C7.58 4 4 7.58 4 12v2H2.5a1 1 0 0 0 0 2h19a1 1 0 0 0 0-2H20v-2c0-4.42-3.58-8-8-8zm-1.2 2.2h2.4v5.5h-2.4V6.2z"
+                    />
+                  </svg>
+                );
+              })}
             </div>
             <span className="text-[10px] sm:text-[11px] text-[#9ba5b4] truncate">
-              CP: <span className="text-[#d7dee8] font-medium">{hud.checkpointLabel}</span>
+              CP: <span className="text-[#f3efe6] font-medium">{hud.checkpointLabel}</span>
             </span>
           </div>
         </div>
@@ -79,17 +105,17 @@ export function GameHud({
         {/* Center-Top: Boss Banner & Live Notifications */}
         <div className="order-4 md:order-none w-full md:w-auto flex flex-col items-center gap-1.5">
           {hud.bossName && (
-            <div className="hud-panel border-[#ef4444]/60 rounded px-3 py-1 md:px-4 md:py-1.5 text-[11px] md:text-xs font-display font-bold tracking-wider text-[#fca5a5] uppercase">
+            <div className="hud-panel border-[#ef4444]/60 rounded px-3.5 py-1 md:px-4 md:py-1.5 text-[11px] md:text-xs font-display font-bold tracking-wider text-[#fca5a5] uppercase">
               BOSS HAZARD: {hud.bossName}
             </div>
           )}
           {hud.checkpointNotice && (
-            <div className="hud-panel rounded px-3 py-1 md:px-4 md:py-1.5 text-[11px] md:text-xs font-display font-semibold tracking-wider text-[#e59a3c] animate-toast-in">
+            <div className="hud-panel rounded px-3.5 py-1 md:px-4 md:py-1.5 text-[11px] md:text-xs font-display font-semibold tracking-wider text-[#f5b832] animate-toast-in">
               {hud.checkpointNotice}
             </div>
           )}
           {hud.achievementNotice && (
-            <div className="hud-panel rounded px-3 py-1 md:px-4 md:py-1.5 text-[11px] md:text-xs font-display font-semibold tracking-wider text-[#eef4ff] border-[#48b8d0]/50 animate-toast-in">
+            <div className="hud-panel rounded px-3.5 py-1 md:px-4 md:py-1.5 text-[11px] md:text-xs font-display font-semibold tracking-wider text-[#eef4ff] border-[#48b8d0]/50 animate-toast-in">
               {hud.achievementNotice}
             </div>
           )}
@@ -102,7 +128,7 @@ export function GameHud({
               <div className="text-[9px] md:text-[10px] tracking-[0.14em] text-[#9ba5b4] uppercase">Score</div>
               <div
                 data-testid="hud-score"
-                className="font-mono-num text-sm md:text-lg font-bold text-[#f3f5f8] leading-tight"
+                className="font-mono-num text-sm md:text-lg font-bold text-[#f3efe6] leading-tight"
               >
                 {Math.round(hud.score)}
               </div>
@@ -126,7 +152,7 @@ export function GameHud({
               <div className="text-[9px] md:text-[10px] tracking-[0.14em] text-[#9ba5b4] uppercase">Items</div>
               <div
                 data-testid="hud-shards"
-                className="font-mono-num text-sm md:text-lg font-bold text-[#f3f5f8] leading-tight"
+                className="font-mono-num text-sm md:text-lg font-bold text-[#f3efe6] leading-tight"
               >
                 {hud.collectiblesFound}/{hud.collectiblesTotal}
               </div>
@@ -143,7 +169,7 @@ export function GameHud({
                 className={`font-mono-num text-sm md:text-lg font-bold leading-tight ${
                   hud.timeChallengeRemaining !== null && hud.timeChallengeRemaining < 10
                     ? 'text-[#ef4444]'
-                    : 'text-[#f3f5f8]'
+                    : 'text-[#f3efe6]'
                 }`}
               >
                 {formatTime(
@@ -215,7 +241,7 @@ export function GameHud({
       {/* Bottom HUD Bar */}
       <div className="flex flex-col items-center gap-1.5 md:gap-2">
         {hud.interactPrompt && !touchControlsActive && (
-          <div className="hud-panel rounded px-3.5 py-1.5 text-xs font-display font-semibold tracking-wider text-[#f3f5f8]">
+          <div className="hud-panel rounded px-3.5 py-1.5 text-xs font-display font-semibold tracking-wider text-[#f3efe6] animate-toast-in">
             [{formatKeyLabel(bindings.interact)}] {hud.interactPrompt}
           </div>
         )}
@@ -231,13 +257,13 @@ export function GameHud({
             <div className="text-[9px] md:text-[10px] tracking-[0.12em] text-[#9ba5b4] uppercase">
               {hud.isSliding ? 'SLIDE' : hud.isSprinting ? 'SPRINT' : 'SPEED'}
             </div>
-            <div className="font-mono-num text-xs md:text-sm font-bold text-[#f3f5f8] whitespace-nowrap">
+            <div className="font-mono-num text-xs md:text-sm font-bold text-[#f3efe6] whitespace-nowrap">
               {Math.round(hud.speed * 3.6)} <span className="text-[9px] md:text-[10px] text-[#9ba5b4]">km/h</span>
             </div>
           </div>
 
           {/* Super Bounce [Q] */}
-          <div className="flex items-center gap-1.5 md:gap-2 min-w-0 md:min-w-[120px]">
+          <div className="flex items-center gap-1.5 md:gap-2 min-w-0 md:min-w-[122px]">
             {!touchControlsActive && (
               <div className="hidden sm:block px-1.5 py-0.5 rounded bg-white/10 font-mono-num text-[11px] font-semibold text-[#f5b832]">
                 {formatKeyLabel(bindings.bounce)}
@@ -257,7 +283,7 @@ export function GameHud({
           </div>
 
           {/* Road Dash [V] */}
-          <div className={`flex items-center gap-1.5 md:gap-2 min-w-0 md:min-w-[120px] ${hud.canDash ? 'opacity-100' : 'opacity-40'}`}>
+          <div className={`flex items-center gap-1.5 md:gap-2 min-w-0 md:min-w-[122px] ${hud.canDash ? 'opacity-100' : 'opacity-40'}`}>
             {!touchControlsActive && (
               <div className="hidden sm:block px-1.5 py-0.5 rounded bg-white/10 font-mono-num text-[11px] font-semibold text-[#e59a3c]">
                 {formatKeyLabel(bindings.dash)}

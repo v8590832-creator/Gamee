@@ -97,6 +97,10 @@ export class GameEngine {
     uTopColor: { value: THREE.Color };
     uHorizonColor: { value: THREE.Color };
     uBottomColor: { value: THREE.Color };
+    uSunColor: { value: THREE.Color };
+    uSunDir: { value: THREE.Vector3 };
+    uTime: { value: number };
+    uFlash: { value: number };
   };
 
   private keyLight: THREE.DirectionalLight;
@@ -133,7 +137,10 @@ export class GameEngine {
   private elapsedRunTime = 0;
   private hudSyncAccum = 0;
   private trailAccum = 0;
+  private footDustAccum = 0;
   private thunderTimer = 7.0;
+  private lightningFlash = 0;
+  private camBankRoll = 0;
 
   // Per-run stats for scoring & challenges
   private fallsCount = 0;
@@ -218,13 +225,17 @@ export class GameEngine {
 
     this.scene = new THREE.Scene();
 
-    // Gradient Atmospheric Sky Dome
+    // Atmospheric Sky Dome with Mie Sun/Moon Glow & Drifting Cloud Strata
     this.skyUniforms = {
       uTopColor: { value: new THREE.Color('#2d6ea3') },
       uHorizonColor: { value: new THREE.Color('#e8c49a') },
       uBottomColor: { value: new THREE.Color('#d9bfa1') },
+      uSunColor: { value: new THREE.Color('#fff2cc') },
+      uSunDir: { value: new THREE.Vector3(0.45, 0.36, -0.82).normalize() },
+      uTime: { value: 0 },
+      uFlash: { value: 0 },
     };
-    const skyGeo = new THREE.SphereGeometry(280, 24, 16);
+    const skyGeo = new THREE.SphereGeometry(280, 32, 20);
     const skyMat = new THREE.ShaderMaterial({
       uniforms: this.skyUniforms,
       side: THREE.BackSide,
@@ -241,12 +252,54 @@ export class GameEngine {
         uniform vec3 uTopColor;
         uniform vec3 uHorizonColor;
         uniform vec3 uBottomColor;
+        uniform vec3 uSunColor;
+        uniform vec3 uSunDir;
+        uniform float uTime;
+        uniform float uFlash;
         varying vec3 vLocalDir;
+
+        float hash21(vec2 p) {
+          p = fract(p * vec2(123.34, 456.21));
+          p += dot(p, p + 45.32);
+          return fract(p.x * p.y);
+        }
+
+        float valueNoise(vec2 p) {
+          vec2 i = floor(p);
+          vec2 f = fract(p);
+          f = f * f * (3.0 - 2.0 * f);
+          float a = hash21(i);
+          float b = hash21(i + vec2(1.0, 0.0));
+          float c = hash21(i + vec2(0.0, 1.0));
+          float d = hash21(i + vec2(1.0, 1.0));
+          return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+        }
+
         void main() {
-          float h = vLocalDir.y;
+          vec3 dir = normalize(vLocalDir);
+          float h = dir.y;
           vec3 col = h >= 0.0
-            ? mix(uHorizonColor, uTopColor, pow(clamp(h, 0.0, 1.0), 0.58))
+            ? mix(uHorizonColor, uTopColor, pow(clamp(h, 0.0, 1.0), 0.56))
             : mix(uHorizonColor, uBottomColor, pow(clamp(-h * 1.6, 0.0, 1.0), 0.72));
+
+          // Sun / Moon disc & Mie scattering halo
+          float sunDot = max(dot(dir, normalize(uSunDir)), 0.0);
+          float halo = pow(sunDot, 8.0) * 0.26 + pow(sunDot, 48.0) * 0.42;
+          float disc = smoothstep(0.9986, 0.9996, sunDot);
+          col += uSunColor * (halo + disc * 1.1);
+
+          // Soft upper cloud strata bands
+          if (h > 0.03) {
+            vec2 cloudUv = dir.xz / (h + 0.18) * 1.35 + vec2(uTime * 0.012, uTime * 0.006);
+            float n = valueNoise(cloudUv) * 0.65 + valueNoise(cloudUv * 2.3 + 4.1) * 0.35;
+            float cloudMask = smoothstep(0.54, 0.82, n) * smoothstep(0.03, 0.25, h) * (1.0 - smoothstep(0.65, 0.95, h));
+            vec3 cloudCol = mix(uHorizonColor, vec3(0.98, 0.96, 0.92), 0.42);
+            col = mix(col, cloudCol, cloudMask * 0.36);
+          }
+
+          // Monsoon lightning flash lift
+          col += vec3(0.65, 0.78, 0.95) * uFlash * 0.45;
+
           gl_FragColor = vec4(col, 1.0);
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
@@ -386,6 +439,11 @@ export class GameEngine {
     this.skyUniforms.uTopColor.value.set(theme.skyTop);
     this.skyUniforms.uHorizonColor.value.set(theme.skyHorizon);
     this.skyUniforms.uBottomColor.value.set(theme.fogColor);
+    this.skyUniforms.uSunColor.value.set(theme.keyLightColor);
+    this.skyUniforms.uSunDir.value
+      .set(theme.rainIntensity > 0.4 ? -0.3 : 0.42, theme.sceneryStyle === 'tunnel' ? 0.12 : 0.34, -0.84)
+      .normalize();
+    this.lightningFlash = 0;
 
     this.keyLight.color.set(theme.keyLightColor);
     this.keyLight.intensity = theme.keyLightIntensity;
@@ -571,6 +629,9 @@ export class GameEngine {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
+    if (!this.contextLost) {
+      this.renderer.render(this.scene, this.camera);
+    }
   };
 
   private onKeyDown = (e: KeyboardEvent): void => {
@@ -688,6 +749,11 @@ export class GameEngine {
     const dt = Math.min(rawDt, 0.05);
 
     this.realTime += dt;
+    this.skyUniforms.uTime.value = this.realTime;
+    if (this.lightningFlash > 0) {
+      this.lightningFlash = Math.max(0, this.lightningFlash - dt * 2.8);
+    }
+    this.skyUniforms.uFlash.value = this.lightningFlash;
 
     if (this.gameState === 'title') {
       this.updateTitleFlyover(dt);
@@ -751,11 +817,12 @@ export class GameEngine {
     this.worldTime += worldDt;
     this.elapsedRunTime += dt;
 
-    // Monsoon thunder ambience
+    // Monsoon thunder & sky lightning flash ambience
     if (this.currentTheme.rainIntensity > 0.5) {
       this.thunderTimer -= dt;
       if (this.thunderTimer <= 0) {
         this.thunderTimer = 9 + Math.random() * 8;
+        this.lightningFlash = 0.9;
         this.audioManager.playThunder();
       }
     }
@@ -874,6 +941,18 @@ export class GameEngine {
         this.playerController.triggerLandSquash(phys.landedImpact);
         this.animController.triggerOneShot('land', 0.16);
         this.character.triggerImpactShockwave(trailColor, 1.4);
+        const splashColor = this.currentTheme.rainIntensity > 0.35 ? '#9bd4f5' : '#cfc2aa';
+        this.particles.spawnBurst(
+          this.playerController.position.x,
+          this.playerController.position.y - 0.45,
+          this.playerController.position.z,
+          8,
+          splashColor,
+          3.6,
+          0.32,
+          0.7,
+          0.6
+        );
         if (phys.landedImpact > 16.5) {
           this.cameraTrauma = Math.min(1, this.cameraTrauma + 0.28);
           this.audioManager.playFahh('hardLand', 35);
@@ -1140,6 +1219,18 @@ export class GameEngine {
       this.particles.spawnTrailPoint(pos.x, pos.y - 0.25, pos.z, trailColor, this.playerController.dashActiveTimer > 0 ? 1.15 : 0.75);
     }
 
+    // Subtle grounded footstep dust puffs or monsoon rain splashes
+    this.footDustAccum += playerDt;
+    if (
+      this.playerController.grounded &&
+      (horizSpeed > 6.5 || this.playerController.isSliding) &&
+      this.footDustAccum >= (this.playerController.isSliding ? 0.07 : 0.14)
+    ) {
+      this.footDustAccum = 0;
+      const footCol = this.currentTheme.rainIntensity > 0.35 ? '#a5d8f3' : '#cfc0a6';
+      this.particles.spawnBurst(pos.x, pos.y - 0.48, pos.z, 3, footCol, 2.1, 0.26, 0.55, 0.4);
+    }
+
     this.particles.update(playerDt);
     this.updateCamera(dt, this.playerController.dashActiveTimer > 0);
 
@@ -1384,6 +1475,16 @@ export class GameEngine {
     );
     this.camera.up.copy(this.currentCamUp);
     this.camera.lookAt(this.currentCamLook);
+
+    // Subtle dynamic camera banking roll on high-speed lateral carving
+    const camRightX = Math.cos(this.camYaw);
+    const camRightZ = -Math.sin(this.camYaw);
+    const lateralVel = vel.x * camRightX + vel.z * camRightZ;
+    const targetBank = Math.max(-0.045, Math.min(0.045, -lateralVel * 0.0028));
+    this.camBankRoll += (targetBank - this.camBankRoll) * (1 - Math.exp(-8 * dt));
+    if (Math.abs(this.camBankRoll) > 0.0005) {
+      this.camera.rotateZ(this.camBankRoll);
+    }
 
     const speed = Math.hypot(vel.x, vel.z);
     const targetFov = dashActive ? 74 : 62 + Math.min(8, Math.max(0, (speed - 11) * 0.7));

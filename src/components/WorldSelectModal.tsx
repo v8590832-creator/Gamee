@@ -33,11 +33,11 @@ export function WorldSelectModal({
       aria-label="World Selection"
       className="fixed inset-0 z-40 bg-[#0a0d12]/84 flex items-center justify-center p-4 md:p-8"
     >
-      <div className="hud-panel rounded-lg w-full max-w-5xl max-h-[88vh] flex flex-col overflow-hidden">
+      <div className="hud-panel rounded-lg w-full max-w-5xl max-h-[88vh] flex flex-col overflow-hidden animate-modal-in">
         {/* Header */}
         <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between gap-4">
           <div>
-            <h2 className="font-display text-2xl font-bold text-[#f3f5f8] tracking-wide">
+            <h2 className="font-display text-2xl font-bold text-[#f3efe6] tracking-wide">
               WORLD SELECTION
             </h2>
             <p className="text-xs text-[#9ba5b4] mt-0.5">

@@ -24,43 +24,65 @@ export function PauseModal({
       role="dialog"
       aria-modal="true"
       aria-label="Game Paused"
-      className="fixed inset-0 z-30 bg-[#0a0d12]/76 flex items-center justify-center p-6"
+      className="fixed inset-0 z-30 bg-[#0a0d12]/78 flex items-center justify-center p-6"
     >
-      <div className="hud-panel rounded-lg w-full max-w-sm p-7">
-        <div className="text-xs tracking-[0.18em] text-[#e59a3c] font-semibold uppercase">
+      <div className="relative hud-panel rounded-lg w-full max-w-sm p-7 animate-modal-in">
+        <span
+          aria-hidden="true"
+          className="absolute top-2.5 left-2.5 w-2.5 h-2.5 border-t border-l border-[#e59a3c]/60"
+        />
+        <span
+          aria-hidden="true"
+          className="absolute bottom-2.5 right-2.5 w-2.5 h-2.5 border-b border-r border-[#e59a3c]/60"
+        />
+        <div className="text-xs font-mono-num tracking-[0.18em] text-[#e59a3c] font-semibold uppercase">
           {worldName}
         </div>
-        <h2 className="font-display text-3xl font-bold text-[#f3f5f8] mt-1">PAUSED</h2>
+        <h2 className="font-display text-3xl font-bold text-[#f3efe6] mt-1">PAUSED</h2>
         <p className="text-sm text-[#9ba5b4] mt-1">{levelName}</p>
 
         <div className="mt-6 flex flex-col gap-2.5">
           <button
             type="button"
             onClick={onResume}
-            className="w-full py-3 px-5 bg-[#e59a3c] hover:bg-[#eda951] text-[#0e1116] font-display font-bold tracking-wider rounded transition-colors cursor-pointer"
+            className="w-full py-3 px-5 bg-[#e59a3c] hover:bg-[#eda951] active:translate-y-[1px] text-[#0e1116] font-display font-bold tracking-wider rounded transition-all flex items-center justify-center gap-2 cursor-pointer"
           >
-            RESUME
+            <svg viewBox="0 0 24 24" className="w-4 h-4 fill-current" aria-hidden="true">
+              <path d="M6 4l14 8-14 8V4z" />
+            </svg>
+            <span>RESUME</span>
           </button>
           <button
             type="button"
             onClick={onRestart}
-            className="w-full py-2.5 px-5 bg-white/8 hover:bg-white/14 text-[#f3f5f8] font-display font-semibold tracking-wider rounded transition-colors cursor-pointer"
+            className="w-full py-2.5 px-5 bg-white/8 hover:bg-white/14 text-[#f3efe6] font-display font-semibold tracking-wider rounded transition-colors flex items-center justify-center gap-2 cursor-pointer"
           >
-            RESTART LEVEL
+            <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 fill-none stroke-[#e59a3c]" strokeWidth="2.2" aria-hidden="true">
+              <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+              <path d="M3 3v5h5" />
+            </svg>
+            <span>RESTART LEVEL</span>
           </button>
           <button
             type="button"
             onClick={onOpenSettings}
-            className="w-full py-2.5 px-5 bg-white/8 hover:bg-white/14 text-[#f3f5f8] font-display font-semibold tracking-wider rounded transition-colors cursor-pointer"
+            className="w-full py-2.5 px-5 bg-white/8 hover:bg-white/14 text-[#f3efe6] font-display font-semibold tracking-wider rounded transition-colors flex items-center justify-center gap-2 cursor-pointer"
           >
-            SETTINGS
+            <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 fill-none stroke-[#9ba5b4]" strokeWidth="2" aria-hidden="true">
+              <path d="M4 6h16M4 12h16M4 18h16M9 4v4M15 10v4M11 16v4" />
+            </svg>
+            <span>SETTINGS</span>
           </button>
           <button
             type="button"
             onClick={onOpenWorlds}
-            className="w-full py-2.5 px-5 bg-white/8 hover:bg-white/14 text-[#f3f5f8] font-display font-semibold tracking-wider rounded transition-colors cursor-pointer"
+            className="w-full py-2.5 px-5 bg-white/8 hover:bg-white/14 text-[#f3efe6] font-display font-semibold tracking-wider rounded transition-colors flex items-center justify-center gap-2 cursor-pointer"
           >
-            WORLD SELECTION
+            <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 fill-none stroke-[#58c477]" strokeWidth="2" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M15.5 8.5l-2.5 6-4.5 1 2.5-6 4.5-1z" />
+            </svg>
+            <span>WORLD SELECTION</span>
           </button>
           <button
             type="button"
@@ -95,9 +117,17 @@ export function VictoryModal({
       aria-label="Level Complete"
       className="fixed inset-0 z-30 bg-[#0a0d12]/80 flex items-center justify-center p-6"
     >
-      <div className="hud-panel rounded-lg w-full max-w-md p-7">
+      <div className="relative hud-panel rounded-lg w-full max-w-md p-7 animate-modal-in">
+        <span
+          aria-hidden="true"
+          className="absolute top-2.5 left-2.5 w-2.5 h-2.5 border-t border-l border-[#e59a3c]/60"
+        />
+        <span
+          aria-hidden="true"
+          className="absolute bottom-2.5 right-2.5 w-2.5 h-2.5 border-b border-r border-[#58c477]/60"
+        />
         <div className="flex items-center justify-between">
-          <span className="text-xs tracking-[0.18em] text-[#e59a3c] font-semibold uppercase">
+          <span className="text-xs font-mono-num tracking-[0.18em] text-[#e59a3c] font-semibold uppercase">
             {summary.worldName}
           </span>
           {summary.isNewBest && (
@@ -107,7 +137,7 @@ export function VictoryModal({
           )}
         </div>
         <div className="flex items-center justify-between mt-1">
-          <h2 className="font-display text-3xl font-bold text-[#f3f5f8]">
+          <h2 className="font-display text-3xl font-bold text-[#f3efe6]">
             STAGE CLEARED
           </h2>
           <div className="text-2xl tracking-widest" aria-label={`${summary.stars} out of 3 stars`}>
@@ -127,7 +157,7 @@ export function VictoryModal({
         <div className="mt-5 grid grid-cols-4 gap-3 border-y border-white/10 py-4">
           <div>
             <div className="text-[10px] uppercase tracking-wider text-[#9ba5b4]">Score</div>
-            <div className="font-mono-num text-xl font-bold text-[#f3f5f8] mt-0.5">
+            <div className="font-mono-num text-xl font-bold text-[#f3efe6] mt-0.5">
               {Math.round(summary.score)}
             </div>
             <div className="text-[10px] font-mono-num text-[#7f8a99]">
@@ -137,7 +167,7 @@ export function VictoryModal({
 
           <div>
             <div className="text-[10px] uppercase tracking-wider text-[#9ba5b4]">Time</div>
-            <div className="font-mono-num text-xl font-bold text-[#f3f5f8] mt-0.5">
+            <div className="font-mono-num text-xl font-bold text-[#f3efe6] mt-0.5">
               {summary.time.toFixed(1)}s
             </div>
             <div className="text-[10px] font-mono-num text-[#7f8a99]">
@@ -200,7 +230,7 @@ export function VictoryModal({
               type="button"
               data-start="true"
               onClick={onNextLevel}
-              className="w-full py-3.5 px-5 bg-[#e59a3c] hover:bg-[#eda951] text-[#0e1116] font-display font-bold tracking-wider rounded transition-colors cursor-pointer"
+              className="w-full py-3.5 px-5 bg-[#e59a3c] hover:bg-[#eda951] active:translate-y-[1px] text-[#0e1116] font-display font-bold tracking-wider rounded transition-all cursor-pointer"
             >
               NEXT STAGE
             </button>
@@ -209,7 +239,7 @@ export function VictoryModal({
             type="button"
             data-start={summary.nextLevelId ? undefined : 'true'}
             onClick={onReplay}
-            className="w-full py-2.5 px-5 bg-white/8 hover:bg-white/14 text-[#f3f5f8] font-display font-semibold tracking-wider rounded transition-colors cursor-pointer"
+            className="w-full py-2.5 px-5 bg-white/8 hover:bg-white/14 text-[#f3efe6] font-display font-semibold tracking-wider rounded transition-colors cursor-pointer"
           >
             REPLAY STAGE
           </button>

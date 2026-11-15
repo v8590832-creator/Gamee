@@ -17,7 +17,7 @@
     overflow: hidden;
     font-family: var(--font-sans);
     background-color: #0e1116;
-    color: #e6e9ef;
+    color: #f3efe6;
   }
 }
 
@@ -32,23 +32,43 @@
 
 /* World-matched architectural HUD surfaces (zero backdrop-filter for WebGL perf) */
 .hud-panel {
-  background-color: rgba(14, 18, 24, 0.90);
-  border: 1px solid rgba(229, 154, 60, 0.24);
+  background-color: rgba(15, 19, 26, 0.92);
+  border: 1px solid rgba(229, 154, 60, 0.28);
   box-shadow:
     inset 0 1px 0 rgba(255, 240, 214, 0.08),
-    0 8px 24px rgba(0, 0, 0, 0.5);
+    inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+    0 10px 28px rgba(0, 0, 0, 0.52);
 }
 
 .hud-panel-subtle {
-  background-color: rgba(14, 18, 24, 0.80);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background-color: rgba(15, 19, 26, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.13);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.05),
     0 4px 16px rgba(0, 0, 0, 0.38);
 }
 
 .hud-text-shadow {
-  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.78);
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.82);
+}
+
+/* Subtle custom scrollbars for highway directory modals */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(229, 154, 60, 0.35);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(229, 154, 60, 0.55);
 }
 
 @keyframes toastSlideIn {
@@ -66,16 +86,31 @@
   animation: toastSlideIn 220ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-@keyframes slowOrbit {
-  from {
-    transform: rotate(0deg);
+@keyframes modalEnter {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
   }
-  to {
-    transform: rotate(360deg);
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }
 
-.animate-slow-orbit {
-  transform-origin: 32px 30px;
-  animation: slowOrbit 18s linear infinite;
+.animate-modal-in {
+  animation: modalEnter 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes dispatchBar {
+  0% {
+    transform: scaleX(0.08);
+  }
+  100% {
+    transform: scaleX(1);
+  }
+}
+
+.animate-dispatch-bar {
+  transform-origin: left center;
+  animation: dispatchBar 420ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
