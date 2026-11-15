@@ -1,0 +1,81 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-display: 'Chakra Petch', system-ui, sans-serif;
+    --font-sans: 'Plus Jakarta Sans', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  }
+
+  html,
+  body,
+  #root {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    font-family: var(--font-sans);
+    background-color: #0e1116;
+    color: #e6e9ef;
+  }
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.font-mono-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* World-matched architectural HUD surfaces (zero backdrop-filter for WebGL perf) */
+.hud-panel {
+  background-color: rgba(14, 18, 24, 0.90);
+  border: 1px solid rgba(229, 154, 60, 0.24);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 240, 214, 0.08),
+    0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.hud-panel-subtle {
+  background-color: rgba(14, 18, 24, 0.80);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 4px 16px rgba(0, 0, 0, 0.38);
+}
+
+.hud-text-shadow {
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.78);
+}
+
+@keyframes toastSlideIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-toast-in {
+  animation: toastSlideIn 220ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes slowOrbit {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-slow-orbit {
+  transform-origin: 32px 30px;
+  animation: slowOrbit 18s linear infinite;
+}
