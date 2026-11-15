@@ -1,4 +1,8 @@
 import type { GameSettings } from '../types';
+import {
+  FAHH_AUDIO_DATA_URI,
+  decodeFahhAudioArrayBuffer,
+} from '../data/fahhAudioData';
 
 export type FahhTriggerReason =
   | 'trafficHit'
@@ -11,16 +15,9 @@ export type FahhTriggerReason =
 const FAHH_COOLDOWN_MS = 2600;
 const FAHH_PREVIEW_COOLDOWN_MS = 500;
 
-function resolveFahhAssetUrl(): string {
-  const metaEnv = (import.meta as unknown as { env?: { BASE_URL?: string } }).env;
-  const base = metaEnv?.BASE_URL ?? '/';
-  const normalizedBase = base.endsWith('/') ? base : `${base}/`;
-  return `${normalizedBase}assets/aistudio/fahhh_KcgAXfs_21994c56.mp3`;
-}
-
 /**
  * Centralized Web Audio engine for BOUNCEBACK: THE GREAT ROAD ADVENTURE.
- * Combines Indian pentatonic synth music + gameplay SFX + preloaded FAHH signature audio.
+ * Combines Indian pentatonic synth music + gameplay SFX + embedded FAHH signature audio.
  */
 export class AudioManager {
   private ctx: AudioContext | null = null;
@@ -46,9 +43,8 @@ export class AudioManager {
   private footstepAccum = 0;
   private disposed = false;
 
-  // FAHH asset caching, anti-spam cooldown, and overlap protection
+  // Embedded FAHH asset caching, anti-spam cooldown, and overlap protection
   private readonly fahhUrl: string;
-  private fahhRawPromise: Promise<ArrayBuffer | null> | null = null;
   private fahhRawBuffer: ArrayBuffer | null = null;
   private fahhAudioBuffer: AudioBuffer | null = null;
   private fahhDecodingPromise: Promise<AudioBuffer | null> | null = null;
@@ -61,13 +57,14 @@ export class AudioManager {
   constructor(settings: GameSettings) {
     this.settings = settings;
     this.muted = Boolean(settings.muted);
-    this.fahhUrl = resolveFahhAssetUrl();
+    this.fahhUrl = FAHH_AUDIO_DATA_URI;
     if (typeof window !== 'undefined') {
-      if (window.location?.protocol === 'file:') {
-        this.initFallbackAudioElement();
-      } else if (typeof fetch === 'function') {
-        void this.preloadFahh();
+      try {
+        this.fahhRawBuffer = decodeFahhAudioArrayBuffer();
+      } catch {
+        this.fahhRawBuffer = null;
       }
+      this.initFallbackAudioElement();
     }
   }
 
@@ -110,11 +107,7 @@ export class AudioManager {
       if (this.ctx.state === 'suspended') {
         void this.ctx.resume().catch(() => {});
       }
-      if (
-        !this.fahhAudioBuffer &&
-        !this.fahhUnavailable &&
-        window.location?.protocol !== 'file:'
-      ) {
+      if (!this.fahhAudioBuffer && !this.fahhUnavailable) {
         void this.decodeFahhBuffer();
       }
     } catch {
@@ -123,40 +116,24 @@ export class AudioManager {
   }
 
   public async preloadFahh(): Promise<void> {
-    if (
-      this.disposed ||
-      this.fahhUnavailable ||
-      typeof fetch !== 'function' ||
-      (typeof window !== 'undefined' && window.location?.protocol === 'file:')
-    ) {
+    if (this.disposed || this.fahhUnavailable) {
       return;
     }
-    if (!this.fahhRawPromise) {
-      this.fahhRawPromise = fetch(this.fahhUrl)
-        .then(async (res) => {
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          const buf = await res.arrayBuffer();
-          this.fahhRawBuffer = buf;
-          return buf;
-        })
-        .catch(() => {
-          this.fahhUnavailable = true;
-          return null;
-        });
+    if (!this.fahhRawBuffer && typeof atob === 'function') {
+      try {
+        this.fahhRawBuffer = decodeFahhAudioArrayBuffer();
+      } catch {
+        this.fahhUnavailable = true;
+        return;
+      }
     }
-    const raw = await this.fahhRawPromise;
-    if (raw && this.ctx && !this.fahhAudioBuffer) {
+    if (this.fahhRawBuffer && this.ctx && !this.fahhAudioBuffer) {
       await this.decodeFahhBuffer();
     }
   }
 
   private async decodeFahhBuffer(): Promise<AudioBuffer | null> {
-    if (
-      this.disposed ||
-      this.fahhUnavailable ||
-      !this.ctx ||
-      (typeof window !== 'undefined' && window.location?.protocol === 'file:')
-    ) {
+    if (this.disposed || this.fahhUnavailable || !this.ctx) {
       return null;
     }
     if (this.fahhAudioBuffer) return this.fahhAudioBuffer;
@@ -164,8 +141,8 @@ export class AudioManager {
 
     this.fahhDecodingPromise = (async () => {
       try {
-        if (!this.fahhRawBuffer) {
-          await this.preloadFahh();
+        if (!this.fahhRawBuffer && typeof atob === 'function') {
+          this.fahhRawBuffer = decodeFahhAudioArrayBuffer();
         }
         if (!this.fahhRawBuffer || !this.ctx || this.disposed) return null;
         const decoded = await this.ctx.decodeAudioData(this.fahhRawBuffer.slice(0));
