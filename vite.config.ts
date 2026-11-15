@@ -5,9 +5,40 @@ import path from 'path';
 import { defineConfig, type Plugin } from 'vite';
 
 /**
- * Produces ONE self-contained dist/index.html with all styles, fonts, audio,
- * and game JavaScript bundled inline so it works directly on file:// (double-click)
- * and as a single-file itch.io HTML upload without any external asset folder.
+ * Serves /entry.html during `vite dev` so root /index.html can hold the full
+ * self-contained standalone production build without breaking live dev previews.
+ */
+function devEntryHtmlPlugin(): Plugin {
+  return {
+    name: 'dev-entry-html',
+    apply: 'serve',
+    configureServer(server) {
+      server.middlewares.use(async (req, res, next) => {
+        const url = req.url?.split('?')[0];
+        if (url === '/' || url === '/index.html') {
+          try {
+            const entryPath = path.resolve(import.meta.dirname, 'entry.html');
+            const raw = fs.readFileSync(entryPath, 'utf8');
+            const transformed = await server.transformIndexHtml(req.url || '/', raw);
+            res.statusCode = 200;
+            res.setHeader('Content-Type', 'text/html; charset=utf-8');
+            res.end(transformed);
+            return;
+          } catch (err) {
+            next(err);
+            return;
+          }
+        }
+        next();
+      });
+    },
+  };
+}
+
+/**
+ * Produces ONE self-contained index.html (both in dist/index.html and root index.html)
+ * with all styles, fonts, audio, and game JavaScript bundled inline so it works directly
+ * on file:// (double-click) and as a single-file itch.io HTML upload.
  */
 function singleFileSelfContainedBuild(): Plugin {
   let outDir = path.resolve(import.meta.dirname, 'dist');
@@ -24,7 +55,8 @@ function singleFileSelfContainedBuild(): Plugin {
         ([fileName, item]) => fileName.endsWith('.html') && item.type === 'asset'
       );
       if (!htmlEntry) return;
-      const htmlAsset = htmlEntry[1] as { type: 'asset'; source: string | Uint8Array };
+      const [origHtmlName, rawAsset] = htmlEntry;
+      const htmlAsset = rawAsset as { type: 'asset'; fileName: string; source: string | Uint8Array };
       let html =
         typeof htmlAsset.source === 'string'
           ? htmlAsset.source
@@ -93,13 +125,29 @@ function singleFileSelfContainedBuild(): Plugin {
         }
       }
 
-      htmlAsset.source = html;
+      // Emit normalized index.html cleanly via Rolldown-safe emitFile
+      if (origHtmlName !== 'index.html') {
+        delete bundle[origHtmlName];
+        this.emitFile({
+          type: 'asset',
+          fileName: 'index.html',
+          source: html,
+        });
+      } else {
+        htmlAsset.source = html;
+      }
     },
     closeBundle() {
       // Remove redundant dist/assets directory so dist/index.html is visibly standalone
       const assetsDir = path.join(outDir, 'assets');
       if (fs.existsSync(assetsDir)) {
         fs.rmSync(assetsDir, { recursive: true, force: true });
+      }
+      // Write standalone index.html directly to project root /index.html as well
+      const distIndex = path.join(outDir, 'index.html');
+      const rootIndex = path.resolve(import.meta.dirname, 'index.html');
+      if (fs.existsSync(distIndex)) {
+        fs.copyFileSync(distIndex, rootIndex);
       }
     },
   };
@@ -111,7 +159,7 @@ export default defineConfig(({ command }) => {
   }
   return {
     base: './',
-    plugins: [react(), tailwindcss(), singleFileSelfContainedBuild()],
+    plugins: [react(), tailwindcss(), devEntryHtmlPlugin(), singleFileSelfContainedBuild()],
     resolve: {
       alias: {
         '@': path.resolve(import.meta.dirname, '.'),
@@ -124,6 +172,7 @@ export default defineConfig(({ command }) => {
       target: 'es2022',
       chunkSizeWarningLimit: 1350,
       rollupOptions: {
+        input: path.resolve(import.meta.dirname, 'entry.html'),
         output: {
           format: 'iife' as const,
           name: 'BouncebackApp',
