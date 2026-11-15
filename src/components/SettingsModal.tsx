@@ -14,10 +14,12 @@ const BINDING_LABELS: Array<{ key: keyof ControlBindings; label: string }> = [
   { key: 'moveBackward', label: 'Move Backward' },
   { key: 'moveLeft', label: 'Move Left' },
   { key: 'moveRight', label: 'Move Right' },
-  { key: 'jump', label: 'Jump' },
-  { key: 'dash', label: 'Bounce Dash' },
-  { key: 'gravityShift', label: 'Gravity Shift' },
-  { key: 'timeSlow', label: 'Time Control' },
+  { key: 'jump', label: 'Jump / Double Jump' },
+  { key: 'sprint', label: 'Sprint' },
+  { key: 'slide', label: 'Road Slide' },
+  { key: 'bounce', label: 'Super Bounce' },
+  { key: 'dash', label: 'Road Dash' },
+  { key: 'special', label: 'Special: Highway Surge' },
   { key: 'interact', label: 'Interact' },
   { key: 'restart', label: 'Respawn Checkpoint' },
   { key: 'pause', label: 'Pause' },
@@ -79,15 +81,15 @@ export function SettingsModal({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6 space-y-8">
-          {/* Display & Graphics */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-7">
+          {/* Graphics */}
           <section>
             <h3 className="font-display text-sm font-semibold tracking-wider text-[#e59a3c] uppercase mb-4">
-              Display &amp; Graphics
+              Graphics &amp; Display
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <div>
-                <label className="block text-xs text-[#b5becb] mb-2">Graphics Quality</label>
+                <div className="text-xs text-[#b5becb] mb-2">Graphics Quality</div>
                 <div className="grid grid-cols-3 gap-1.5 bg-white/5 p-1 rounded">
                   {(['low', 'medium', 'high'] as GraphicsQuality[]).map((q) => (
                     <button
@@ -96,6 +98,26 @@ export function SettingsModal({
                       onClick={() => onUpdateSettings({ graphicsQuality: q })}
                       className={`py-1.5 text-xs font-display font-semibold uppercase rounded transition-colors cursor-pointer ${
                         settings.graphicsQuality === q
+                          ? 'bg-[#e59a3c] text-[#0e1116]'
+                          : 'text-[#b5becb] hover:text-white'
+                      }`}
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <div className="text-xs text-[#b5becb] mb-2">Effects Quality</div>
+                <div className="grid grid-cols-3 gap-1.5 bg-white/5 p-1 rounded">
+                  {(['low', 'medium', 'high'] as GraphicsQuality[]).map((q) => (
+                    <button
+                      key={q}
+                      type="button"
+                      onClick={() => onUpdateSettings({ effectsQuality: q })}
+                      className={`py-1.5 text-xs font-display font-semibold uppercase rounded transition-colors cursor-pointer ${
+                        settings.effectsQuality === q
                           ? 'bg-[#e59a3c] text-[#0e1116]'
                           : 'text-[#b5becb] hover:text-white'
                       }`}
@@ -123,6 +145,31 @@ export function SettingsModal({
                   onChange={(e) => onUpdateSettings({ resolutionScale: Number(e.target.value) })}
                   className="w-full accent-[#e59a3c]"
                 />
+              </div>
+
+              <div className="flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => onUpdateSettings({ shadowsEnabled: !settings.shadowsEnabled })}
+                  className={`flex-1 py-2 px-3 rounded border text-xs font-display font-semibold tracking-wider cursor-pointer ${
+                    settings.shadowsEnabled
+                      ? 'bg-[#58c477]/15 border-[#58c477]/60 text-[#58c477]'
+                      : 'bg-white/5 border-white/15 text-[#9ba5b4]'
+                  }`}
+                >
+                  SHADOWS: {settings.shadowsEnabled ? 'ON' : 'OFF'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onUpdateSettings({ vsync: !settings.vsync })}
+                  className={`flex-1 py-2 px-3 rounded border text-xs font-display font-semibold tracking-wider cursor-pointer ${
+                    settings.vsync
+                      ? 'bg-[#e59a3c]/15 border-[#e59a3c]/60 text-[#e59a3c]'
+                      : 'bg-white/5 border-white/15 text-[#9ba5b4]'
+                  }`}
+                >
+                  V-SYNC: {settings.vsync ? 'ON' : 'OFF'}
+                </button>
               </div>
 
               <div className="flex items-center justify-between md:col-span-2 pt-1">
@@ -206,10 +253,10 @@ export function SettingsModal({
             </div>
           </section>
 
-          {/* Sensitivity */}
+          {/* Camera & Gameplay */}
           <section className="border-t border-white/10 pt-6">
             <h3 className="font-display text-sm font-semibold tracking-wider text-[#e59a3c] uppercase mb-4">
-              Camera &amp; Mouse Sensitivity
+              Camera &amp; Gameplay
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <div>
@@ -232,31 +279,65 @@ export function SettingsModal({
               </div>
 
               <div>
-                <label htmlFor="sens-cam" className="flex justify-between text-xs text-[#b5becb] mb-2">
-                  <span>Camera Sensitivity</span>
+                <label htmlFor="cam-dist" className="flex justify-between text-xs text-[#b5becb] mb-2">
+                  <span>Camera Distance</span>
                   <span className="font-mono-num text-white">
-                    {settings.cameraSensitivity.toFixed(1)}x
+                    {settings.cameraDistance.toFixed(1)}m
                   </span>
                 </label>
                 <input
-                  id="sens-cam"
+                  id="cam-dist"
                   type="range"
-                  min={0.2}
-                  max={2.4}
-                  step={0.1}
-                  value={settings.cameraSensitivity}
-                  onChange={(e) => onUpdateSettings({ cameraSensitivity: Number(e.target.value) })}
+                  min={6.0}
+                  max={13.0}
+                  step={0.5}
+                  value={settings.cameraDistance}
+                  onChange={(e) => onUpdateSettings({ cameraDistance: Number(e.target.value) })}
                   className="w-full accent-[#e59a3c]"
                 />
+              </div>
+
+              <div>
+                <label htmlFor="cam-smooth" className="flex justify-between text-xs text-[#b5becb] mb-2">
+                  <span>Camera Smoothing</span>
+                  <span className="font-mono-num text-white">
+                    {settings.cameraSmoothing.toFixed(1)}x
+                  </span>
+                </label>
+                <input
+                  id="cam-smooth"
+                  type="range"
+                  min={0.4}
+                  max={2.0}
+                  step={0.1}
+                  value={settings.cameraSmoothing}
+                  onChange={(e) => onUpdateSettings({ cameraSmoothing: Number(e.target.value) })}
+                  className="w-full accent-[#e59a3c]"
+                />
+              </div>
+
+              <div className="flex items-center justify-between pt-2">
+                <span className="text-xs text-[#b5becb]">Invert Camera Y-Axis</span>
+                <button
+                  type="button"
+                  onClick={() => onUpdateSettings({ invertY: !settings.invertY })}
+                  className={`px-4 py-2 rounded border text-xs font-display font-semibold tracking-wider cursor-pointer ${
+                    settings.invertY
+                      ? 'bg-[#e59a3c]/20 border-[#e59a3c] text-[#e59a3c]'
+                      : 'bg-white/5 border-white/15 text-[#b5becb]'
+                  }`}
+                >
+                  {settings.invertY ? 'INVERTED' : 'STANDARD'}
+                </button>
               </div>
             </div>
           </section>
 
-          {/* Control Configuration */}
+          {/* Controls */}
           <section className="border-t border-white/10 pt-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-display text-sm font-semibold tracking-wider text-[#e59a3c] uppercase">
-                Control Configuration
+                Controls Configuration
               </h3>
               <button
                 type="button"

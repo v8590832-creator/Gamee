@@ -21,7 +21,7 @@ export class BounceSystem {
     platform: PlatformMeshHandle,
     contactPoint: Vec3
   ): { nextVelocity: Vec3; event: BounceEvent | null } {
-    if (platform.def.kind === 'bounce') {
+    if (platform.def.kind === 'bounce' || platform.def.kind === 'pothole') {
       const padForce = platform.def.bounceForce ?? 19;
       const restitution = platform.def.restitution ?? 0.72;
       const res = computeBounceVelocity(

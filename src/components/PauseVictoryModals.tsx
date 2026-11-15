@@ -6,6 +6,7 @@ interface PauseModalProps {
   onResume: () => void;
   onRestart: () => void;
   onOpenSettings: () => void;
+  onOpenWorlds: () => void;
   onMainMenu: () => void;
 }
 
@@ -15,6 +16,7 @@ export function PauseModal({
   onResume,
   onRestart,
   onOpenSettings,
+  onOpenWorlds,
   onMainMenu,
 }: PauseModalProps) {
   return (
@@ -22,7 +24,7 @@ export function PauseModal({
       role="dialog"
       aria-modal="true"
       aria-label="Game Paused"
-      className="fixed inset-0 z-30 bg-[#0a0d12]/72 flex items-center justify-center p-6"
+      className="fixed inset-0 z-30 bg-[#0a0d12]/76 flex items-center justify-center p-6"
     >
       <div className="hud-panel rounded-lg w-full max-w-sm p-7">
         <div className="text-xs tracking-[0.18em] text-[#e59a3c] font-semibold uppercase">
@@ -55,6 +57,13 @@ export function PauseModal({
           </button>
           <button
             type="button"
+            onClick={onOpenWorlds}
+            className="w-full py-2.5 px-5 bg-white/8 hover:bg-white/14 text-[#f3f5f8] font-display font-semibold tracking-wider rounded transition-colors cursor-pointer"
+          >
+            WORLD SELECTION
+          </button>
+          <button
+            type="button"
             onClick={onMainMenu}
             className="w-full py-2.5 px-5 border border-white/15 hover:border-white/35 text-[#b5becb] hover:text-white font-display font-semibold tracking-wider rounded transition-colors cursor-pointer"
           >
@@ -84,7 +93,7 @@ export function VictoryModal({
       role="dialog"
       aria-modal="true"
       aria-label="Level Complete"
-      className="fixed inset-0 z-30 bg-[#0a0d12]/78 flex items-center justify-center p-6"
+      className="fixed inset-0 z-30 bg-[#0a0d12]/80 flex items-center justify-center p-6"
     >
       <div className="hud-panel rounded-lg w-full max-w-md p-7">
         <div className="flex items-center justify-between">
@@ -97,58 +106,95 @@ export function VictoryModal({
             </span>
           )}
         </div>
-        <h2 className="font-display text-3xl font-bold text-[#f3f5f8] mt-1">
-          STAGE CLEARED
-        </h2>
+        <div className="flex items-center justify-between mt-1">
+          <h2 className="font-display text-3xl font-bold text-[#f3f5f8]">
+            STAGE CLEARED
+          </h2>
+          <div className="text-2xl tracking-widest" aria-label={`${summary.stars} out of 3 stars`}>
+            {[1, 2, 3].map((s) => (
+              <span
+                key={s}
+                className={s <= summary.stars ? 'text-[#f5b832]' : 'text-white/15'}
+              >
+                ★
+              </span>
+            ))}
+          </div>
+        </div>
         <p className="text-sm text-[#9ba5b4] mt-0.5">{summary.levelName}</p>
 
         {/* Mastery Metrics */}
-        <div className="mt-6 grid grid-cols-3 gap-3 border-y border-white/10 py-4">
+        <div className="mt-5 grid grid-cols-4 gap-3 border-y border-white/10 py-4">
           <div>
-            <div className="text-[11px] uppercase tracking-wider text-[#9ba5b4]">Score</div>
-            <div className="font-mono-num text-2xl font-bold text-[#f3f5f8] mt-0.5">
+            <div className="text-[10px] uppercase tracking-wider text-[#9ba5b4]">Score</div>
+            <div className="font-mono-num text-xl font-bold text-[#f3f5f8] mt-0.5">
               {Math.round(summary.score)}
             </div>
-            <div className="text-[11px] font-mono-num text-[#7f8a99]">
+            <div className="text-[10px] font-mono-num text-[#7f8a99]">
               Best {Math.round(summary.bestScore)}
             </div>
           </div>
 
           <div>
-            <div className="text-[11px] uppercase tracking-wider text-[#9ba5b4]">Time</div>
-            <div className="font-mono-num text-2xl font-bold text-[#f3f5f8] mt-0.5">
+            <div className="text-[10px] uppercase tracking-wider text-[#9ba5b4]">Time</div>
+            <div className="font-mono-num text-xl font-bold text-[#f3f5f8] mt-0.5">
               {summary.time.toFixed(1)}s
             </div>
-            <div className="text-[11px] font-mono-num text-[#7f8a99]">
+            <div className="text-[10px] font-mono-num text-[#7f8a99]">
               Par {summary.parTime}s
             </div>
           </div>
 
           <div>
-            <div className="text-[11px] uppercase tracking-wider text-[#9ba5b4]">Shards</div>
-            <div className="font-mono-num text-2xl font-bold text-[#e59a3c] mt-0.5">
+            <div className="text-[10px] uppercase tracking-wider text-[#9ba5b4]">Coins</div>
+            <div className="font-mono-num text-xl font-bold text-[#f5b832] mt-0.5">
+              +{summary.coinsEarned}
+            </div>
+            <div className="text-[10px] font-mono-num text-[#7f8a99]">Earned</div>
+          </div>
+
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-[#9ba5b4]">Items</div>
+            <div className="font-mono-num text-xl font-bold text-[#e59a3c] mt-0.5">
               {summary.collectiblesFound}/{summary.collectiblesTotal}
             </div>
-            <div className="text-[11px] font-mono-num text-[#7f8a99]">
+            <div className="text-[10px] font-mono-num text-[#7f8a99]">
               Falls {summary.fallsCount}
             </div>
           </div>
         </div>
 
         {summary.newlyUnlockedAchievements.length > 0 && (
-          <div className="mt-4 p-3 bg-white/5 border border-[#48b8d0]/30 rounded">
+          <div className="mt-4 p-3 bg-white/5 border border-[#48b8d0]/35 rounded">
             <div className="text-[11px] uppercase tracking-wider text-[#48b8d0] font-semibold">
-              Unlocked
+              Achievements Unlocked
             </div>
             <ul className="mt-1 space-y-1 text-xs text-[#e6e9ef]">
               {summary.newlyUnlockedAchievements.map((a) => (
-                <li key={a.id}>{a.name} — {a.description}</li>
+                <li key={a.id}>
+                  {a.name} (+{a.rewardCoins} Coins) — {a.description}
+                </li>
               ))}
             </ul>
           </div>
         )}
 
-        <div className="mt-6 flex flex-col gap-2.5">
+        {summary.newlyCompletedChallenges.length > 0 && (
+          <div className="mt-3 p-3 bg-white/5 border border-[#58c477]/35 rounded">
+            <div className="text-[11px] uppercase tracking-wider text-[#58c477] font-semibold">
+              Challenges Completed
+            </div>
+            <ul className="mt-1 space-y-1 text-xs text-[#e6e9ef]">
+              {summary.newlyCompletedChallenges.map((c) => (
+                <li key={c.id}>
+                  {c.title} (+{c.rewardCoins} Coins)
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div className="mt-5 flex flex-col gap-2.5">
           {summary.nextLevelId && (
             <button
               type="button"

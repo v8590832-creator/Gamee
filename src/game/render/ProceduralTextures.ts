@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 
 export interface ProceduralTextureSet {
+  asphaltAlbedo: THREE.CanvasTexture;
+  asphaltBump: THREE.CanvasTexture;
+  redWhiteBarrierAlbedo: THREE.CanvasTexture;
   concreteAlbedo: THREE.CanvasTexture;
   concreteBump: THREE.CanvasTexture;
   concreteRoughness: THREE.CanvasTexture;
@@ -13,6 +16,34 @@ export interface ProceduralTextureSet {
   stoneBump: THREE.CanvasTexture;
   contactShadow: THREE.CanvasTexture;
   dispose: () => void;
+}
+
+export function createHighwaySignTexture(label: string): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 160;
+  const ctx = canvas.getContext('2d')!;
+
+  ctx.fillStyle = '#146b3a';
+  ctx.fillRect(0, 0, 512, 160);
+  ctx.strokeStyle = '#f2f5f7';
+  ctx.lineWidth = 8;
+  ctx.strokeRect(10, 10, 492, 140);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 34px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, 256, 62);
+
+  ctx.fillStyle = '#f2b830';
+  ctx.font = 'bold 18px system-ui, sans-serif';
+  ctx.fillText('BHARAT HIGHWAY AUTHORITY  ▲  SPEED & BOUNCE', 256, 114);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+  return tex;
 }
 
 function makeCanvas(size = 256): [HTMLCanvasElement, CanvasRenderingContext2D] {
@@ -284,7 +315,62 @@ export function createProceduralTextures(maxAnisotropy: number): ProceduralTextu
   contactShadow.colorSpace = THREE.SRGBColorSpace;
   contactShadow.needsUpdate = true;
 
+  // 7. Indian Highway Asphalt Tarmac (Albedo + Bump)
+  const [asCanvas, asCtx] = makeCanvas(512);
+  asCtx.fillStyle = '#33363d';
+  asCtx.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 8500; i++) {
+    const x = (i * 101) % 512;
+    const y = (i * 199) % 512;
+    const v = 38 + ((i * 23) % 34);
+    asCtx.fillStyle = `rgb(${v},${v + 1},${v + 3})`;
+    asCtx.fillRect(x, y, 2, 2);
+  }
+  // Subtle darker wheel-track wear lanes
+  asCtx.fillStyle = 'rgba(18, 20, 24, 0.25)';
+  asCtx.fillRect(104, 0, 80, 512);
+  asCtx.fillRect(328, 0, 80, 512);
+  // Crisp white shoulder lines
+  asCtx.fillStyle = '#d9dde3';
+  asCtx.fillRect(18, 0, 10, 512);
+  asCtx.fillRect(484, 0, 10, 512);
+  // Broken yellow/white center highway dashes
+  asCtx.fillStyle = '#e6b83a';
+  for (let y = 16; y < 512; y += 96) {
+    asCtx.fillRect(250, y, 12, 52);
+  }
+  const asphaltAlbedo = finalizeTexture(asCanvas, true, aniso, 1);
+
+  const [abCanvas, abCtx] = makeCanvas(256);
+  abCtx.fillStyle = '#808080';
+  abCtx.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 4000; i++) {
+    const x = (i * 73) % 256;
+    const y = (i * 139) % 256;
+    const v = 96 + ((i * 29) % 68);
+    abCtx.fillStyle = `rgb(${v},${v},${v})`;
+    abCtx.fillRect(x, y, 2, 2);
+  }
+  const asphaltBump = finalizeTexture(abCanvas, false, aniso, 2);
+
+  // 8. Red & White Indian Roadside Jersey Barrier Stripes
+  const [rwCanvas, rwCtx] = makeCanvas(256);
+  rwCtx.fillStyle = '#e8e4dc';
+  rwCtx.fillRect(0, 0, 256, 256);
+  rwCtx.fillStyle = '#c9342c';
+  for (let x = 0; x < 256; x += 64) {
+    rwCtx.fillRect(x, 0, 32, 256);
+  }
+  for (let i = 0; i < 500; i++) {
+    rwCtx.fillStyle = 'rgba(30, 24, 20, 0.22)';
+    rwCtx.fillRect((i * 83) % 256, (i * 127) % 256, 3, 2);
+  }
+  const redWhiteBarrierAlbedo = finalizeTexture(rwCanvas, true, aniso, 2);
+
   return {
+    asphaltAlbedo,
+    asphaltBump,
+    redWhiteBarrierAlbedo,
     concreteAlbedo,
     concreteBump,
     concreteRoughness,
@@ -297,6 +383,9 @@ export function createProceduralTextures(maxAnisotropy: number): ProceduralTextu
     stoneBump,
     contactShadow,
     dispose: () => {
+      asphaltAlbedo.dispose();
+      asphaltBump.dispose();
+      redWhiteBarrierAlbedo.dispose();
       concreteAlbedo.dispose();
       concreteBump.dispose();
       concreteRoughness.dispose();

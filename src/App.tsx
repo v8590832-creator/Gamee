@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { ChallengesModal } from './components/ChallengesModal';
+import { CreditsModal } from './components/CreditsModal';
+import { CustomizationModal } from './components/CustomizationModal';
 import { GameHud } from './components/GameHud';
 import { PauseModal, VictoryModal } from './components/PauseVictoryModals';
 import { ProfileModal } from './components/ProfileModal';
@@ -12,19 +15,26 @@ import { AudioManager } from './game/systems/AudioManager';
 import { SaveManager } from './game/systems/SaveManager';
 import { SettingsManager } from './game/systems/SettingsManager';
 import type {
+  CharacterLoadout,
   ControlBindings,
   GameSettings,
   GameState,
   HudSnapshot,
-  OrbSkinId,
   RunSummary,
   SaveData,
   WorldId,
 } from './game/types';
 
-type ActiveModal = 'none' | 'worlds' | 'settings' | 'profile';
+type ActiveModal =
+  | 'none'
+  | 'worlds'
+  | 'customization'
+  | 'challenges'
+  | 'achievements'
+  | 'settings'
+  | 'credits';
 
-function createInitialHud(levelId: string): HudSnapshot {
+function createInitialHud(levelId: string, totalCoins: number): HudSnapshot {
   const lvl = getLevelById(levelId);
   const theme = WORLD_THEMES[lvl.worldId];
   return {
@@ -32,24 +42,31 @@ function createInitialHud(levelId: string): HudSnapshot {
     levelName: lvl.name,
     worldName: theme.name,
     score: 1000,
+    coinsRun: 0,
+    totalCoins,
     collectiblesFound: 0,
     collectiblesTotal: lvl.collectibles.length,
+    health: 3,
+    maxHealth: 3,
     elapsedTime: 0,
+    timeChallengeRemaining: lvl.timeChallengeSec ?? null,
     speed: 0,
+    isSprinting: false,
+    isSliding: false,
+    bounceCooldownRatio: 0,
     dashCooldownRatio: 0,
     dashCharge: 1,
+    specialCooldownRatio: 0,
+    specialActive: false,
+    specialEnergy: 1,
     gravityInverted: false,
-    gravityCooldownRatio: 0,
-    timeSlowActive: false,
-    timeSlowEnergy: 1,
-    checkpointLabel: 'Launch Deck',
+    checkpointLabel: 'Start Gate',
     checkpointNotice: null,
     achievementNotice: null,
+    bossName: lvl.boss?.name ?? null,
     interactPrompt: null,
     levelHint: lvl.hint ?? null,
     fallsCount: 0,
-    canGravityShift: lvl.allowGravityShift,
-    canTimeControl: lvl.allowTimeControl,
     canDash: lvl.allowDash,
   };
 }
@@ -75,7 +92,10 @@ export default function App() {
     ...settingsMgrRef.current!.getSettings(),
   }));
   const [hud, setHud] = useState<HudSnapshot>(() =>
-    createInitialHud(saveMgrRef.current!.getData().lastPlayedLevelId)
+    createInitialHud(
+      saveMgrRef.current!.getData().lastPlayedLevelId,
+      saveMgrRef.current!.getData().coins
+    )
   );
   const [runSummary, setRunSummary] = useState<RunSummary | null>(null);
   const [activeModal, setActiveModal] = useState<ActiveModal>('none');
@@ -85,7 +105,7 @@ export default function App() {
 
   const syncSaveSnapshot = useCallback(() => {
     if (saveMgrRef.current) {
-      setSaveData({ ...saveMgrRef.current.getData() });
+      setSaveData({ ...saveMgrRef.current.getData(), loadout: { ...saveMgrRef.current.getData().loadout } });
     }
   }, []);
 
@@ -117,7 +137,6 @@ export default function App() {
     );
     engineRef.current = engine;
 
-    // Support ?autostart=1 to jump directly into active gameplay
     const params = new URLSearchParams(window.location.search);
     if (params.get('autostart') === '1') {
       engine.loadLevel('w1-l1', true);
@@ -161,11 +180,11 @@ export default function App() {
     [syncSaveSnapshot]
   );
 
-  // Title Screen Enter / Space start handshake + Quick Mute (M)
+  // Title Screen Enter start + Mute (M)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (gameState === 'title' && activeModal === 'none') {
-        if (e.code === 'Enter' || e.code === 'Space') {
+        if (e.code === 'Enter') {
           e.preventDefault();
           handlePlay();
           return;
@@ -208,10 +227,16 @@ export default function App() {
     engineRef.current?.updateSettings(next);
   };
 
-  const handleEquipSkin = (skinId: OrbSkinId) => {
+  const handleUnlockCosmetic = (itemId: string) => {
     audioMgrRef.current?.playUiClick();
-    if (saveMgrRef.current?.equipSkin(skinId)) {
-      engineRef.current?.setSkin(skinId);
+    saveMgrRef.current?.unlockCosmetic(itemId);
+    syncSaveSnapshot();
+  };
+
+  const handleEquipCosmetic = (category: keyof CharacterLoadout, itemId: string) => {
+    audioMgrRef.current?.playUiClick();
+    if (saveMgrRef.current?.equipCosmetic(category, itemId)) {
+      engineRef.current?.setLoadout(saveMgrRef.current.getData().loadout);
       syncSaveSnapshot();
     }
   };
@@ -225,7 +250,9 @@ export default function App() {
   const handleResetProgress = () => {
     audioMgrRef.current?.playUiClick();
     saveMgrRef.current?.resetProgress();
-    engineRef.current?.setSkin('copper');
+    if (saveMgrRef.current) {
+      engineRef.current?.setLoadout(saveMgrRef.current.getData().loadout);
+    }
     syncSaveSnapshot();
   };
 
@@ -235,14 +262,12 @@ export default function App() {
 
   return (
     <main className="relative w-full h-full overflow-hidden bg-[#0e1116]">
-      {/* Dedicated Isolated WebGL Mount Container */}
       <div
         ref={canvasMountRef}
         data-testid="game-canvas-container"
         className="absolute inset-0 w-full h-full"
       />
 
-      {/* Title Screen */}
       {gameState === 'title' && activeModal === 'none' && (
         <TitleScreen
           saveData={saveData}
@@ -254,13 +279,25 @@ export default function App() {
             audioMgrRef.current?.playUiClick();
             setActiveModal('worlds');
           }}
+          onOpenCustomization={() => {
+            audioMgrRef.current?.playUiClick();
+            setActiveModal('customization');
+          }}
+          onOpenChallenges={() => {
+            audioMgrRef.current?.playUiClick();
+            setActiveModal('challenges');
+          }}
+          onOpenAchievements={() => {
+            audioMgrRef.current?.playUiClick();
+            setActiveModal('achievements');
+          }}
           onOpenSettings={() => {
             audioMgrRef.current?.playUiClick();
             setActiveModal('settings');
           }}
-          onOpenProfile={() => {
+          onOpenCredits={() => {
             audioMgrRef.current?.playUiClick();
-            setActiveModal('profile');
+            setActiveModal('credits');
           }}
           onQuit={() => {
             audioMgrRef.current?.playUiClick();
@@ -271,7 +308,6 @@ export default function App() {
         />
       )}
 
-      {/* Active Gameplay HUD */}
       {gameState === 'playing' && (
         <GameHud
           hud={hud}
@@ -283,7 +319,6 @@ export default function App() {
         />
       )}
 
-      {/* Pause Modal */}
       {gameState === 'paused' && activeModal === 'none' && (
         <PauseModal
           levelName={currentLvl.name}
@@ -300,6 +335,10 @@ export default function App() {
             audioMgrRef.current?.playUiClick();
             setActiveModal('settings');
           }}
+          onOpenWorlds={() => {
+            audioMgrRef.current?.playUiClick();
+            setActiveModal('worlds');
+          }}
           onMainMenu={() => {
             audioMgrRef.current?.playUiClick();
             engineRef.current?.setGameState('title');
@@ -307,7 +346,6 @@ export default function App() {
         />
       )}
 
-      {/* Stage Clear / Victory Modal */}
       {gameState === 'gameover' && runSummary && activeModal === 'none' && (
         <VictoryModal
           summary={runSummary}
@@ -329,7 +367,6 @@ export default function App() {
         />
       )}
 
-      {/* Sub-Modals */}
       {activeModal === 'worlds' && (
         <WorldSelectModal
           saveData={saveData}
@@ -340,6 +377,39 @@ export default function App() {
           }}
           onToggleShowcaseUnlock={handleToggleShowcaseUnlock}
           onPlayLevel={handleLaunchLevel}
+          onClose={() => {
+            audioMgrRef.current?.playUiClick();
+            setActiveModal('none');
+          }}
+        />
+      )}
+
+      {activeModal === 'customization' && (
+        <CustomizationModal
+          saveData={saveData}
+          onUnlockCosmetic={handleUnlockCosmetic}
+          onEquipCosmetic={handleEquipCosmetic}
+          onClose={() => {
+            audioMgrRef.current?.playUiClick();
+            setActiveModal('none');
+          }}
+        />
+      )}
+
+      {activeModal === 'challenges' && (
+        <ChallengesModal
+          saveData={saveData}
+          onClose={() => {
+            audioMgrRef.current?.playUiClick();
+            setActiveModal('none');
+          }}
+        />
+      )}
+
+      {activeModal === 'achievements' && (
+        <ProfileModal
+          saveData={saveData}
+          onResetProgress={handleResetProgress}
           onClose={() => {
             audioMgrRef.current?.playUiClick();
             setActiveModal('none');
@@ -360,11 +430,8 @@ export default function App() {
         />
       )}
 
-      {activeModal === 'profile' && (
-        <ProfileModal
-          saveData={saveData}
-          onEquipSkin={handleEquipSkin}
-          onResetProgress={handleResetProgress}
+      {activeModal === 'credits' && (
+        <CreditsModal
           onClose={() => {
             audioMgrRef.current?.playUiClick();
             setActiveModal('none');

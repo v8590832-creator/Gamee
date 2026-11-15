@@ -1,8 +1,8 @@
 import type { GameSettings } from '../types';
 
 /**
- * 100% procedural Web Audio synthesizer for BOUNCEBACK.
- * Zero external audio files — eliminates 404s and allows real-time velocity/time-scale modulation.
+ * 100% procedural Web Audio synthesizer for BOUNCEBACK: THE GREAT ROAD ADVENTURE.
+ * Indian pentatonic raga-inspired synth arpeggio + footsteps + horns + monsoon thunder.
  */
 export class AudioManager {
   private ctx: AudioContext | null = null;
@@ -10,12 +10,10 @@ export class AudioManager {
   private musicGain: GainNode | null = null;
   private sfxGain: GainNode | null = null;
 
-  // Continuous rolling loop
   private rollOsc: OscillatorNode | null = null;
   private rollFilter: BiquadFilterNode | null = null;
   private rollGain: GainNode | null = null;
 
-  // Ambient music pad
   private padOsc1: OscillatorNode | null = null;
   private padOsc2: OscillatorNode | null = null;
   private padFilter: BiquadFilterNode | null = null;
@@ -26,6 +24,7 @@ export class AudioManager {
   private baseHz = 55;
   private musicStep = 0;
   private musicTimer: number | null = null;
+  private footstepAccum = 0;
 
   constructor(settings: GameSettings) {
     this.settings = settings;
@@ -36,7 +35,9 @@ export class AudioManager {
     const ua = (navigator as unknown as { userActivation?: { hasBeenActive: boolean } }).userActivation;
     if (ua && !ua.hasBeenActive) return;
     if (!this.ctx) {
-      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       if (!AudioCtx) return;
       this.ctx = new AudioCtx();
       this.masterGain = this.ctx.createGain();
@@ -75,8 +76,8 @@ export class AudioManager {
     const now = this.ctx.currentTime;
     const master = this.muted ? 0 : this.settings.masterVolume;
     this.masterGain.gain.setTargetAtTime(master, now, 0.04);
-    this.musicGain.gain.setTargetAtTime(this.settings.musicVolume * 0.35, now, 0.08);
-    this.sfxGain.gain.setTargetAtTime(this.settings.sfxVolume * 0.7, now, 0.04);
+    this.musicGain.gain.setTargetAtTime(this.settings.musicVolume * 0.36, now, 0.08);
+    this.sfxGain.gain.setTargetAtTime(this.settings.sfxVolume * 0.72, now, 0.04);
   }
 
   private initRollingLoop(): void {
@@ -112,7 +113,7 @@ export class AudioManager {
     this.padFilter.frequency.value = 340;
 
     this.padGain = this.ctx.createGain();
-    this.padGain.gain.value = 0.22;
+    this.padGain.gain.value = 0.2;
 
     this.padOsc1.connect(this.padFilter);
     this.padOsc2.connect(this.padFilter);
@@ -122,16 +123,21 @@ export class AudioManager {
     this.padOsc1.start();
     this.padOsc2.start();
 
-    // Gentle generative architectural arpeggio pulse every 1.6s
+    // Upbeat Indian-inspired Raga Bhupali arcade rhythm pulse
     if (this.musicTimer === null && typeof window !== 'undefined') {
-      const ratios = [1, 1.5, 1.2, 1.8, 1.333, 2.0, 1.5, 1.125];
+      const ratios = [1, 1.125, 1.25, 1.5, 1.667, 2.0, 1.667, 1.25];
       this.musicTimer = window.setInterval(() => {
         if (!this.ctx || this.ctx.state !== 'running' || this.muted || !this.musicGain) return;
         const ratio = ratios[this.musicStep % ratios.length];
+        const isBeat = this.musicStep % 2 === 0;
         this.musicStep++;
         const noteHz = this.baseHz * 2 * ratio;
-        this.playTone(noteHz, 0.85, 'sine', 0.09, this.musicGain, 0.08);
-      }, 1600);
+        this.playTone(noteHz, 0.55, 'triangle', 0.085, this.musicGain, 0.02);
+        if (isBeat) {
+          // Subtle tabla-like low percussive pulse
+          this.playTone(this.baseHz * 1.5, 0.14, 'sine', 0.09, this.musicGain, 0.005, this.baseHz * 0.9);
+        }
+      }, 650);
     }
   }
 
@@ -143,16 +149,28 @@ export class AudioManager {
     this.padOsc2.frequency.setTargetAtTime(baseHz * 1.5, now, 0.35);
   }
 
-  public updateRolling(speed: number, grounded: boolean, timeSlow: boolean): void {
+  public updateMovementAudio(dt: number, speed: number, grounded: boolean, isSliding: boolean, specialActive: boolean): void {
     if (!this.ctx || !this.rollGain || !this.rollOsc || !this.rollFilter) return;
     const now = this.ctx.currentTime;
-    const targetGain = grounded ? Math.min(0.16, Math.max(0, (speed - 0.8) * 0.012)) : 0;
-    const freq = 42 + Math.min(140, speed * 5.5);
-    this.rollGain.gain.setTargetAtTime(targetGain, now, 0.06);
-    this.rollOsc.frequency.setTargetAtTime(freq, now, 0.06);
-    this.rollFilter.frequency.setTargetAtTime(timeSlow ? 140 : 260 + speed * 14, now, 0.08);
+    const targetGain = isSliding ? 0.14 : grounded ? Math.min(0.06, Math.max(0, (speed - 1.5) * 0.005)) : 0;
+    const freq = isSliding ? 130 : 52 + Math.min(90, speed * 3.5);
+    this.rollGain.gain.setTargetAtTime(targetGain, now, 0.05);
+    this.rollOsc.frequency.setTargetAtTime(freq, now, 0.05);
+    this.rollFilter.frequency.setTargetAtTime(specialActive ? 220 : 320 + speed * 12, now, 0.08);
     if (this.padFilter) {
-      this.padFilter.frequency.setTargetAtTime(timeSlow ? 160 : 380, now, 0.12);
+      this.padFilter.frequency.setTargetAtTime(specialActive ? 220 : 420, now, 0.12);
+    }
+
+    // Crisp rhythmic footsteps while walking/running/sprinting
+    if (grounded && !isSliding && speed > 1.8 && this.sfxGain) {
+      const interval = Math.max(0.18, 0.42 - speed * 0.015);
+      this.footstepAccum += dt;
+      if (this.footstepAccum >= interval) {
+        this.footstepAccum = 0;
+        this.playTone(95 + Math.random() * 25, 0.055, 'triangle', 0.08, this.sfxGain, 0.004, 55);
+      }
+    } else {
+      this.footstepAccum = 0;
     }
   }
 
@@ -190,38 +208,64 @@ export class AudioManager {
     osc.stop(now + duration + 0.02);
   }
 
-  public playJump(): void {
+  public playJump(isDouble = false): void {
     this.unlock();
     if (!this.sfxGain) return;
-    const jitter = 0.94 + Math.random() * 0.12;
-    this.playTone(190 * jitter, 0.18, 'triangle', 0.28, this.sfxGain, 0.008, 420 * jitter);
+    const base = isDouble ? 290 : 195;
+    this.playTone(base, 0.18, 'triangle', 0.25, this.sfxGain, 0.008, base * 2.1);
+  }
+
+  public playSlide(): void {
+    this.unlock();
+    if (!this.sfxGain) return;
+    this.playTone(170, 0.22, 'sawtooth', 0.12, this.sfxGain, 0.01, 75);
   }
 
   public playBounce(intensity = 1): void {
     this.unlock();
     if (!this.sfxGain) return;
     const scale = Math.min(1.5, Math.max(0.5, intensity));
-    this.playTone(115, 0.28, 'sine', 0.35 * scale, this.sfxGain, 0.005, 58);
-    this.playTone(320 * scale, 0.24, 'triangle', 0.22 * scale, this.sfxGain, 0.01, 640);
+    this.playTone(120, 0.28, 'sine', 0.34 * scale, this.sfxGain, 0.005, 62);
+    this.playTone(340 * scale, 0.24, 'triangle', 0.22 * scale, this.sfxGain, 0.01, 680);
   }
 
   public playDash(): void {
     this.unlock();
     if (!this.sfxGain) return;
     this.playTone(280, 0.26, 'sawtooth', 0.18, this.sfxGain, 0.006, 95);
-    this.playTone(520, 0.2, 'sine', 0.22, this.sfxGain, 0.006, 180);
+    this.playTone(540, 0.2, 'sine', 0.22, this.sfxGain, 0.006, 200);
+  }
+
+  public playSpecial(): void {
+    this.unlock();
+    if (!this.sfxGain) return;
+    this.playTone(330, 0.35, 'triangle', 0.24, this.sfxGain, 0.01, 660);
+    this.playTone(495, 0.35, 'sine', 0.18, this.sfxGain, 0.02, 880);
+  }
+
+  public playHorn(): void {
+    this.unlock();
+    if (!this.sfxGain) return;
+    this.playTone(310, 0.18, 'sawtooth', 0.11, this.sfxGain, 0.008);
+    this.playTone(390, 0.18, 'sawtooth', 0.09, this.sfxGain, 0.008);
+  }
+
+  public playDamage(): void {
+    this.unlock();
+    if (!this.sfxGain) return;
+    this.playTone(140, 0.28, 'sawtooth', 0.25, this.sfxGain, 0.005, 52);
+  }
+
+  public playThunder(): void {
+    this.unlock();
+    if (!this.sfxGain) return;
+    this.playTone(75, 0.9, 'sawtooth', 0.14, this.sfxGain, 0.04, 34);
   }
 
   public playGravityShift(inverted: boolean): void {
     this.unlock();
     if (!this.sfxGain) return;
-    this.playTone(inverted ? 180 : 340, 0.32, 'sine', 0.26, this.sfxGain, 0.01, inverted ? 360 : 160);
-  }
-
-  public playTimeControl(active: boolean): void {
-    this.unlock();
-    if (!this.sfxGain) return;
-    this.playTone(active ? 440 : 220, 0.28, 'triangle', 0.2, this.sfxGain, 0.01, active ? 180 : 380);
+    this.playTone(inverted ? 180 : 340, 0.32, 'sine', 0.24, this.sfxGain, 0.01, inverted ? 360 : 160);
   }
 
   public playPortal(): void {
@@ -231,21 +275,21 @@ export class AudioManager {
     this.playTone(495, 0.35, 'triangle', 0.16, this.sfxGain, 0.02, 990);
   }
 
-  public playCollectible(comboIndex = 0): void {
+  public playCollectible(comboIndex = 0, isRare = false): void {
     this.unlock();
     if (!this.sfxGain) return;
     const pentatonic = [523.25, 587.33, 659.25, 783.99, 880.0, 1046.5];
-    const hz = pentatonic[comboIndex % pentatonic.length];
-    this.playTone(hz, 0.28, 'sine', 0.26, this.sfxGain, 0.005);
-    this.playTone(hz * 1.5, 0.22, 'triangle', 0.14, this.sfxGain, 0.01);
+    const hz = pentatonic[comboIndex % pentatonic.length] * (isRare ? 1.25 : 1.0);
+    this.playTone(hz, 0.26, 'sine', 0.24, this.sfxGain, 0.005);
+    this.playTone(hz * 1.5, 0.2, 'triangle', 0.14, this.sfxGain, 0.01);
   }
 
   public playCheckpoint(): void {
     this.unlock();
     if (!this.sfxGain) return;
-    this.playTone(392, 0.32, 'sine', 0.22, this.sfxGain, 0.01);
+    this.playTone(392, 0.3, 'sine', 0.2, this.sfxGain, 0.01);
     setTimeout(() => {
-      if (this.sfxGain) this.playTone(587.33, 0.42, 'sine', 0.22, this.sfxGain, 0.01);
+      if (this.sfxGain) this.playTone(587.33, 0.4, 'sine', 0.22, this.sfxGain, 0.01);
     }, 90);
   }
 
@@ -264,11 +308,11 @@ export class AudioManager {
   public playVictory(): void {
     this.unlock();
     if (!this.sfxGain) return;
-    const notes = [440, 554.37, 659.25, 880];
+    const notes = [440, 554.37, 659.25, 880, 1046.5];
     notes.forEach((hz, i) => {
       setTimeout(() => {
         if (this.sfxGain) this.playTone(hz, 0.45, 'triangle', 0.22, this.sfxGain, 0.01);
-      }, i * 100);
+      }, i * 90);
     });
   }
 

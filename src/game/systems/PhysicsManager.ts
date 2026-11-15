@@ -11,10 +11,12 @@ export interface PhysicsStepOutput {
   bounceEvents: BounceEvent[];
   landedImpact: number;
   inFluid: boolean;
+  onSlippery: boolean;
+  ridingRoller: boolean;
 }
 
 export class PhysicsManager {
-  public readonly radius = 0.5;
+  public readonly radius = 0.55;
   private prevPlatformPos = new Map<string, Vec3>();
   private prevPlatformRot = new Map<string, number>();
 
@@ -35,15 +37,19 @@ export class PhysicsManager {
     platforms: PlatformMeshHandle[],
     gravity: GravityController,
     bounceSystem: BounceSystem,
-    wasGrounded: boolean
+    wasGrounded: boolean,
+    isSliding: boolean
   ): PhysicsStepOutput {
     const bounceEvents: BounceEvent[] = [];
     let grounded = false;
     let landedImpact = 0;
     let inFluid = false;
+    let onSlippery = false;
+    let ridingRoller = false;
     const upDir = gravity.getUpDirection();
+    const effRadius = isSliding ? 0.36 : this.radius;
 
-    // 1. Update crumbling platform timers in worldDt (respects Time Control!)
+    // 1. Update crumbling platform timers
     for (const p of platforms) {
       if (p.def.kind === 'crumbling') {
         if (p.crumbleState === 'shaking') {
@@ -61,7 +67,7 @@ export class PhysicsManager {
       }
     }
 
-    // 2. Apply gravity + zone forces (wind / fluid buoyancy)
+    // 2. Apply gravity + zone forces (wind / fluid / puddles)
     vel.x += gravity.currentGravity.x * playerDt;
     vel.y += gravity.currentGravity.y * playerDt;
     vel.z += gravity.currentGravity.z * playerDt;
@@ -76,17 +82,25 @@ export class PhysicsManager {
           }
           if (p.def.kind === 'fluidZone') {
             inFluid = true;
-            const drag = p.def.zoneDrag ?? 2.2;
+            const drag = p.def.zoneDrag ?? 1.8;
             const factor = Math.exp(-drag * playerDt);
             vel.x *= factor;
             vel.y *= Math.max(0.75, factor);
             vel.z *= factor;
           }
         }
+      } else if (p.def.kind === 'puddle') {
+        if (
+          Math.abs(pos.x - p.currentPos.x) <= p.def.size.x * 0.5 &&
+          Math.abs(pos.z - p.currentPos.z) <= p.def.size.z * 0.5 &&
+          Math.abs(pos.y - p.currentPos.y) <= 1.2
+        ) {
+          onSlippery = true;
+        }
       }
     }
 
-    // 3. Substepped integration & collision (2 substeps prevent tunneling on dashes/falls)
+    // 3. Substepped collision
     const substeps = 2;
     const subDt = playerDt / substeps;
 
@@ -99,7 +113,8 @@ export class PhysicsManager {
         if (
           p.def.kind === 'gravityZone' ||
           p.def.kind === 'windZone' ||
-          p.def.kind === 'fluidZone'
+          p.def.kind === 'fluidZone' ||
+          p.def.kind === 'puddle'
         ) {
           continue;
         }
@@ -110,27 +125,25 @@ export class PhysicsManager {
           ? { x: 0, y: p.currentRotY, z: 0 }
           : p.def.rotation;
 
-        const hit = intersectSphereOBB(pos, this.radius, p.currentPos, p.def.size, rot);
+        const hit = intersectSphereOBB(pos, effRadius, p.currentPos, p.def.size, rot);
         if (!hit.hit) continue;
 
-        // Separate sphere from surface
         pos.x += hit.normal.x * hit.penetration;
         pos.y += hit.normal.y * hit.penetration;
         pos.z += hit.normal.z * hit.penetration;
 
-        // Check if surface normal opposes current gravity (counts as grounded)
         const alignmentWithUp =
           hit.normal.x * upDir.x + hit.normal.y * upDir.y + hit.normal.z * upDir.z;
         if (alignmentWithUp > 0.48) {
           grounded = true;
+          if (p.def.materialStyle === 'wet') onSlippery = true;
+          if (p.def.kind === 'roller') ridingRoller = true;
 
-          // Trigger crumbling if intact
           if (p.def.kind === 'crumbling' && p.crumbleState === 'intact') {
             p.crumbleState = 'shaking';
-            p.crumbleTimer = p.def.crumbleDelay ?? 0.8;
+            p.crumbleTimer = p.def.crumbleDelay ?? 0.85;
           }
 
-          // Carry player with moving platform / rotating gear (on first substep)
           if (s === 0) {
             const prevPos = this.prevPlatformPos.get(p.def.id);
             if (prevPos) {
@@ -153,7 +166,6 @@ export class PhysicsManager {
           }
         }
 
-        // Bounce / velocity response
         const { nextVelocity, event } = bounceSystem.resolveSurfaceBounce(
           vel,
           hit.normal,
@@ -177,13 +189,12 @@ export class PhysicsManager {
       }
     }
 
-    // Store platform transforms for next frame's carry delta
     for (const p of platforms) {
       this.prevPlatformPos.set(p.def.id, { ...p.currentPos });
       this.prevPlatformRot.set(p.def.id, p.currentRotY);
     }
 
-    // Find ground shadow elevation directly below/above player
+    // Ground shadow ray
     let groundY = pos.y - 20;
     let hasGroundBelow = false;
     let bestDist = Infinity;
@@ -191,7 +202,8 @@ export class PhysicsManager {
       if (
         p.def.kind === 'gravityZone' ||
         p.def.kind === 'windZone' ||
-        p.def.kind === 'fluidZone'
+        p.def.kind === 'fluidZone' ||
+        p.def.kind === 'puddle'
       ) {
         continue;
       }
@@ -220,6 +232,8 @@ export class PhysicsManager {
       bounceEvents,
       landedImpact,
       inFluid,
+      onSlippery,
+      ridingRoller,
     };
   }
 }

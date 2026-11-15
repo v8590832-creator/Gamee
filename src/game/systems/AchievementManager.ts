@@ -1,5 +1,5 @@
 import { ACHIEVEMENTS } from '../data/catalog';
-import type { AchievementDef, AchievementId } from '../types';
+import type { AchievementDef, AchievementId, WorldId } from '../types';
 import type { SaveManager } from './SaveManager';
 
 export class AchievementManager {
@@ -10,22 +10,22 @@ export class AchievementManager {
   }
 
   public grant(id: AchievementId): AchievementDef | null {
-    const wasNew = this.saveManager.unlockAchievement(id);
-    if (!wasNew) return null;
     const def = ACHIEVEMENTS.find((a) => a.id === id) ?? null;
-    if (def?.rewardSkin) {
-      this.saveManager.unlockSkin(def.rewardSkin);
-    }
+    if (!def) return null;
+    const wasNew = this.saveManager.unlockAchievement(id, def.rewardCoins);
+    if (!wasNew) return null;
     return def;
   }
 
   public evaluateCompletion(params: {
     levelId: string;
+    worldId: WorldId;
     elapsedTime: number;
     parTime: number;
     collectiblesFound: number;
     collectiblesTotal: number;
     fallsCount: number;
+    damageTaken: number;
   }): AchievementDef[] {
     const unlocked: AchievementDef[] = [];
     const tryGrant = (id: AchievementId) => {
@@ -34,22 +34,19 @@ export class AchievementManager {
     };
 
     if (params.levelId === 'w1-l1') {
-      tryGrant('first_awakening');
-    }
-    if (params.levelId === 'w1-l2') {
-      this.saveManager.unlockSkin('obsidian');
+      tryGrant('first_road');
     }
     if (params.elapsedTime <= params.parTime) {
       tryGrant('speedrunner');
     }
-    if (params.collectiblesTotal > 0 && params.collectiblesFound >= params.collectiblesTotal) {
-      tryGrant('shard_collector');
-    }
-    if (params.fallsCount === 0) {
+    if (params.fallsCount === 0 && params.damageTaken === 0) {
       tryGrant('no_fall_run');
     }
-    if (params.levelId === 'w10-l1') {
-      tryGrant('zenith_reached');
+    if (params.worldId === 8) {
+      tryGrant('monsoon_survivor');
+    }
+    if (params.levelId === 'w10-l5') {
+      tryGrant('ultimate_bounceback');
     }
 
     const prog = this.saveManager.getData().levelProgress;
@@ -58,29 +55,33 @@ export class AchievementManager {
       tryGrant('world1_cleared');
     }
 
-    if (this.saveManager.getTotalUniqueShards() >= 20) {
-      this.saveManager.unlockSkin('void');
+    if (this.saveManager.getData().blueprintsCollected >= 3) {
+      tryGrant('blueprint_hunter');
     }
 
     return unlocked;
   }
 
-  public evaluateAction(action: 'bounce' | 'gravity' | 'timeSlow' | 'portal'): AchievementDef | null {
+  public evaluateAction(
+    action: 'bounce' | 'vehicleBounce' | 'rollerRide' | 'blueprint'
+  ): AchievementDef | null {
     if (action === 'bounce') {
       const total = this.saveManager.incrementStat('totalBounces', 1);
-      if (total >= 15) return this.grant('kinetic_surge');
+      if (total >= 20) return this.grant('super_bouncer');
       return null;
     }
-    if (action === 'gravity') {
-      return this.grant('gravity_defier');
+    if (action === 'vehicleBounce') {
+      return this.grant('traffic_acrobat');
     }
-    if (action === 'timeSlow') {
-      this.saveManager.unlockSkin('cryo');
-      return this.grant('temporal_master');
+    if (action === 'rollerRide') {
+      this.saveManager.incrementStat('totalRollerRides', 1);
+      return this.grant('roller_rider');
     }
-    if (action === 'portal') {
-      this.saveManager.incrementStat('totalPortalJumps', 1);
-      return this.grant('portal_hopper');
+    if (action === 'blueprint') {
+      if (this.saveManager.getData().blueprintsCollected >= 3) {
+        return this.grant('blueprint_hunter');
+      }
+      return null;
     }
     return null;
   }

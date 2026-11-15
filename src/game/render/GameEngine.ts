@@ -1,20 +1,26 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { TRAIL_CATALOG } from '../data/catalog';
 import { getLevelById, getNextLevelId } from '../data/levels';
 import { WORLD_THEMES } from '../data/worlds';
-import { computeLevelScore } from '../physics/math';
+import {
+  computeLevelScore,
+  computeStarRating,
+  intersectVehicleCollision,
+} from '../physics/math';
 import type {
+  CharacterLoadout,
   GameSettings,
   GameState,
   HudSnapshot,
   LevelDefinition,
-  OrbSkinId,
   RunSummary,
   WorldTheme,
 } from '../types';
 import { AchievementManager } from '../systems/AchievementManager';
 import { AudioManager } from '../systems/AudioManager';
 import { BounceSystem } from '../systems/BounceSystem';
+import { ChallengeManager } from '../systems/ChallengeManager';
 import { CheckpointManager } from '../systems/CheckpointManager';
 import { CollectibleManager } from '../systems/CollectibleManager';
 import { GravityController } from '../systems/GravityController';
@@ -22,16 +28,13 @@ import { PhysicsManager } from '../systems/PhysicsManager';
 import { PlayerController } from '../systems/PlayerController';
 import { PortalSystem } from '../systems/PortalSystem';
 import { SaveManager } from '../systems/SaveManager';
-import { createPlayerOrb, type PlayerOrbRig } from './OrbBuilder';
+import { CharacterAnimationController } from './CharacterAnimationController';
+import { createCharacterRig, type CharacterRig } from './CharacterBuilder';
 import { ParticlePool } from './ParticlePool';
 import { createProceduralTextures, type ProceduralTextureSet } from './ProceduralTextures';
 import { buildLevelScene, type BuiltLevelScene } from './WorldBuilder';
 
-// Pre-allocated scratch math helpers (zero GC inside render loop)
 const _upVec = new THREE.Vector3(0, 1, 0);
-const _rollAxis = new THREE.Vector3();
-const _velVec = new THREE.Vector3();
-const _deltaQuat = new THREE.Quaternion();
 const _camGoalPos = new THREE.Vector3();
 const _camLookPos = new THREE.Vector3();
 const _camDir = new THREE.Vector3();
@@ -66,7 +69,8 @@ export class GameEngine {
   private isSoftwareGl: boolean;
   private textures: ProceduralTextureSet;
   private particles: ParticlePool;
-  private orb: PlayerOrbRig;
+  private character: CharacterRig;
+  private animController = new CharacterAnimationController();
   private skyDome: THREE.Mesh;
   private skyUniforms: {
     uTopColor: { value: THREE.Color };
@@ -74,15 +78,14 @@ export class GameEngine {
     uBottomColor: { value: THREE.Color };
   };
 
-  // Lighting
   private keyLight: THREE.DirectionalLight;
   private hemiLight: THREE.HemisphereLight;
   private rimLight: THREE.DirectionalLight;
 
-  // Systems
   public readonly saveManager: SaveManager;
   public readonly audioManager: AudioManager;
   public readonly achievementManager: AchievementManager;
+  public readonly challengeManager: ChallengeManager;
   private readonly bounceSystem = new BounceSystem();
   private readonly gravityController = new GravityController();
   private readonly portalSystem = new PortalSystem();
@@ -107,27 +110,38 @@ export class GameEngine {
   private elapsedRunTime = 0;
   private hudSyncAccum = 0;
   private trailAccum = 0;
+  private thunderTimer = 7.0;
+
+  // Per-run stats for scoring & challenges
   private fallsCount = 0;
+  private damageTakenRun = 0;
+  private dashesUsedRun = 0;
+  private trafficHitsRun = 0;
+  private coinsRun = 0;
+  private helmetsRun = 0;
+  private blueprintsRun = 0;
+  private signsRun = 0;
+  private rollerRideTriggered = false;
+  private gravityZoneTriggered = false;
+
   private hitstopTimer = 0;
   private cameraTrauma = 0;
 
-  // Camera state
+  // Camera
   private camYaw = 0;
-  private camPitch = 0.34;
+  private camPitch = 0.28;
   private airPitchOffset = 0;
-  private camDistance = 8.8;
-  private currentCamPos = new THREE.Vector3(0, 6, 10);
-  private currentCamLook = new THREE.Vector3(0, 1, -6);
+  private camDistance = 8.5;
+  private currentCamPos = new THREE.Vector3(0, 5, 9);
+  private currentCamLook = new THREE.Vector3(0, 1.5, -4);
   private currentCamUp = new THREE.Vector3(0, 1, 0);
 
-  // Notices
   private checkpointNotice: string | null = null;
   private checkpointNoticeTimer = 0;
   private achievementNotice: string | null = null;
   private achievementNoticeTimer = 0;
   private nearbySwitchId: string | null = null;
 
-  // Input state
   private keysPressed = new Set<string>();
   private pointerDown = false;
   private prevPauseKey = false;
@@ -144,8 +158,10 @@ export class GameEngine {
     this.saveManager = saveManager;
     this.audioManager = audioManager;
     this.achievementManager = new AchievementManager(saveManager);
+    this.challengeManager = new ChallengeManager(saveManager);
     this.settings = settings;
     this.callbacks = callbacks;
+    this.camDistance = settings.cameraDistance;
 
     this.isSoftwareGl = detectSoftwareGl();
 
@@ -155,7 +171,7 @@ export class GameEngine {
     });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.12;
+    this.renderer.toneMappingExposure = 1.1;
     this.applyQualitySettings(settings);
 
     const w = container.clientWidth || window.innerWidth;
@@ -168,11 +184,11 @@ export class GameEngine {
 
     this.scene = new THREE.Scene();
 
-    // Atmospheric gradient sky dome (BackSide, follows camera)
+    // Gradient Atmospheric Sky Dome
     this.skyUniforms = {
-      uTopColor: { value: new THREE.Color('#161f2b') },
-      uHorizonColor: { value: new THREE.Color('#384654') },
-      uBottomColor: { value: new THREE.Color('#2c3744') },
+      uTopColor: { value: new THREE.Color('#2d6ea3') },
+      uHorizonColor: { value: new THREE.Color('#e8c49a') },
+      uBottomColor: { value: new THREE.Color('#d9bfa1') },
     };
     const skyGeo = new THREE.SphereGeometry(280, 24, 16);
     const skyMat = new THREE.ShaderMaterial({
@@ -207,20 +223,18 @@ export class GameEngine {
     this.skyDome.frustumCulled = false;
     this.scene.add(this.skyDome);
 
-    // Studio PBR environment map on every device
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     pmrem.dispose();
 
     this.camera = new THREE.PerspectiveCamera(62, w / h, 0.1, 420);
 
-    // 3-Point Warm/Cool Studio Rig
-    this.hemiLight = new THREE.HemisphereLight('#7b9bbf', '#3a2d24', 1.05);
+    this.hemiLight = new THREE.HemisphereLight('#90c2eb', '#5c4b3b', 1.15);
     this.scene.add(this.hemiLight);
 
-    this.keyLight = new THREE.DirectionalLight('#ffdfb0', 2.35);
+    this.keyLight = new THREE.DirectionalLight('#fff0d1', 2.5);
     this.keyLight.position.set(22, 36, 18);
-    this.keyLight.castShadow = !this.isSoftwareGl && settings.graphicsQuality !== 'low';
+    this.keyLight.castShadow = !this.isSoftwareGl && settings.shadowsEnabled && settings.graphicsQuality !== 'low';
     this.keyLight.shadow.mapSize.set(1024, 1024);
     this.keyLight.shadow.camera.near = 2;
     this.keyLight.shadow.camera.far = 140;
@@ -242,14 +256,12 @@ export class GameEngine {
     this.particles = new ParticlePool();
     this.scene.add(this.particles.mesh);
 
-    const equippedSkin = saveManager.getData().equippedSkin;
-    this.orb = createPlayerOrb(
-      equippedSkin,
-      this.textures.contactShadow,
-      !this.isSoftwareGl
+    this.character = createCharacterRig(
+      saveManager.getData().loadout,
+      this.textures.contactShadow
     );
-    this.scene.add(this.orb.root);
-    this.scene.add(this.orb.contactShadow);
+    this.scene.add(this.character.root);
+    this.scene.add(this.character.contactShadow);
 
     this.currentLevel = getLevelById(saveManager.getData().lastPlayedLevelId);
     this.currentTheme = WORLD_THEMES[this.currentLevel.worldId];
@@ -269,12 +281,14 @@ export class GameEngine {
 
   public updateSettings(settings: GameSettings): void {
     this.settings = settings;
+    this.camDistance = settings.cameraDistance;
     this.audioManager.updateSettings(settings);
     this.applyQualitySettings(settings);
   }
 
-  public setSkin(skinId: OrbSkinId): void {
-    this.orb.applySkin(skinId);
+  public setLoadout(loadout: CharacterLoadout): void {
+    this.character.applyLoadout(loadout);
+    this.renderer.render(this.scene, this.camera);
   }
 
   private applyQualitySettings(settings: GameSettings): void {
@@ -287,10 +301,11 @@ export class GameEngine {
     const qualMul =
       settings.graphicsQuality === 'low' ? 0.75 : settings.graphicsQuality === 'medium' ? 0.9 : 1.0;
     this.renderer.setPixelRatio(Math.max(0.6, baseDpr * settings.resolutionScale * qualMul));
-    this.renderer.shadowMap.enabled = settings.graphicsQuality !== 'low';
+    const shadowsOn = settings.shadowsEnabled && settings.graphicsQuality !== 'low';
+    this.renderer.shadowMap.enabled = shadowsOn;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     if (this.keyLight) {
-      this.keyLight.castShadow = settings.graphicsQuality !== 'low';
+      this.keyLight.castShadow = shadowsOn;
     }
   }
 
@@ -340,7 +355,8 @@ export class GameEngine {
     this.portalSystem.reset();
     this.checkpointManager.reset(level.spawn);
     this.collectibleManager.reset();
-    this.playerController.reset(level.spawn);
+    this.playerController.reset(level.spawn, level.spawnYaw ?? 0);
+
     if (this.builtLevel) {
       for (const p of this.builtLevel.platforms) {
         p.crumbleState = 'intact';
@@ -371,6 +387,16 @@ export class GameEngine {
 
     this.elapsedRunTime = 0;
     this.fallsCount = 0;
+    this.damageTakenRun = 0;
+    this.dashesUsedRun = 0;
+    this.trafficHitsRun = 0;
+    this.coinsRun = 0;
+    this.helmetsRun = 0;
+    this.blueprintsRun = 0;
+    this.signsRun = 0;
+    this.rollerRideTriggered = false;
+    this.gravityZoneTriggered = false;
+
     this.hitstopTimer = 0;
     this.cameraTrauma = 0;
     this.checkpointNotice = null;
@@ -378,19 +404,19 @@ export class GameEngine {
     this.nearbySwitchId = null;
 
     this.camYaw = level.spawnYaw ?? 0;
-    this.camPitch = 0.34;
+    this.camPitch = 0.28;
     this.airPitchOffset = 0;
     this.currentCamUp.set(0, 1, 0);
-    this.orb.root.position.set(level.spawn.x, level.spawn.y, level.spawn.z);
-    this.orb.rollGroup.quaternion.identity();
 
-    // Immediately position gameplay camera behind spawn facing -Z landmark
+    this.character.root.position.set(level.spawn.x, level.spawn.y, level.spawn.z);
+    this.character.contactShadow.position.set(level.spawn.x, 0.12, level.spawn.z);
+
     this.currentCamPos.set(
       level.spawn.x + Math.sin(this.camYaw) * this.camDistance,
-      level.spawn.y + 4.2,
+      level.spawn.y + 3.6,
       level.spawn.z + Math.cos(this.camYaw) * this.camDistance
     );
-    this.currentCamLook.set(level.spawn.x, level.spawn.y + 0.5, level.spawn.z - 6);
+    this.currentCamLook.set(level.spawn.x, level.spawn.y + 1.1, level.spawn.z - 5);
     this.camera.position.copy(this.currentCamPos);
     this.camera.up.set(0, 1, 0);
     this.camera.lookAt(this.currentCamLook);
@@ -471,7 +497,6 @@ export class GameEngine {
   };
 
   private onKeyDown = (e: KeyboardEvent): void => {
-    // Allow Escape / Pause key to toggle pause immediately
     if (e.code === this.settings.bindings.pause || e.code === 'KeyP') {
       if (!this.prevPauseKey) {
         this.prevPauseKey = true;
@@ -526,7 +551,6 @@ export class GameEngine {
     if (this.gameState !== 'playing') return;
     this.audioManager.unlock();
     this.pointerDown = true;
-    // Request pointer lock on user canvas click for seamless mouse camera orbit
     if (e.button === 0 && !document.pointerLockElement && !this.isSoftwareGl) {
       this.renderer.domElement.requestPointerLock?.();
     }
@@ -540,13 +564,14 @@ export class GameEngine {
     if (this.gameState !== 'playing') return;
     if (!document.pointerLockElement && !this.pointerDown) return;
     const sens = 0.0026 * this.settings.mouseSensitivity * this.settings.cameraSensitivity;
+    const ySign = this.settings.invertY ? -1 : 1;
     this.camYaw -= e.movementX * sens;
-    this.camPitch = Math.max(-0.35, Math.min(1.15, this.camPitch + e.movementY * sens));
+    this.camPitch = Math.max(-0.25, Math.min(1.1, this.camPitch + e.movementY * sens * ySign));
   };
 
   private onWheel = (e: WheelEvent): void => {
     if (this.gameState !== 'playing') return;
-    this.camDistance = Math.max(5.5, Math.min(14.5, this.camDistance + e.deltaY * 0.004));
+    this.camDistance = Math.max(5.5, Math.min(15.0, this.camDistance + e.deltaY * 0.004));
   };
 
   private startLoop(): void {
@@ -592,7 +617,6 @@ export class GameEngine {
     } else if (this.gameState === 'playing') {
       this.updatePlaying(dt);
     } else {
-      // Paused or GameOver: freeze gameplay simulation, keep subtle visual polish
       this.particles.update(0);
     }
 
@@ -603,40 +627,35 @@ export class GameEngine {
 
   private updateTitleFlyover(dt: number): void {
     this.worldTime += dt;
-    this.builtLevel?.updateAnimations(this.worldTime, this.realTime, dt);
-    this.orb.updateVisuals(this.realTime, dt, 2, false);
+    this.builtLevel?.updateAnimations(this.worldTime, this.realTime, dt, this.playerController.position);
 
-    // Smooth cinematic orbit around World 01 approach & distant landmark
-    const angle = this.realTime * 0.14;
-    const focusZ = -32;
-    const radius = 26;
-    this.camera.position.set(
-      Math.sin(angle) * radius,
-      14 + Math.sin(this.realTime * 0.25) * 3,
-      focusZ + Math.cos(angle) * radius
-    );
+    // Character stands proudly on starting road deck waving slightly
+    const roadTopY = this.currentLevel.spawn.y - 1.0;
+    this.character.root.position.set(this.currentLevel.spawn.x + 1.5, roadTopY + 0.55, this.currentLevel.spawn.z - 2.6);
+    this.character.contactShadow.position.set(this.currentLevel.spawn.x + 1.5, roadTopY + 0.02, this.currentLevel.spawn.z - 2.6);
+    this.animController.update(this.character, dt, {
+      horizSpeed: 0,
+      velY: 0,
+      grounded: true,
+      isSprinting: false,
+      isSliding: false,
+      dashActive: false,
+      specialActive: false,
+      facingYaw: 0.35,
+      victory: false,
+    });
+
+    // Showcase character in right half of screen with Indian road site sweeping behind!
+    const sway = Math.sin(this.realTime * 0.25) * 1.4;
+    this.camera.position.set(-1.5 + sway, 3.2, 4.8);
     this.camera.up.set(0, 1, 0);
-    this.camera.lookAt(0, 3, -38);
+    this.camera.lookAt(0.2, 1.8, -14);
   }
 
   private updatePlaying(dt: number): void {
     const level = this.currentLevel;
     const input = this.playerController.sampleInput(this.keysPressed, this.settings.bindings);
 
-    // 1. Time Control ([T] hold or toggle energy)
-    let timeSlowActive = false;
-    if (level.allowTimeControl && input.timeSlowHeld && this.playerController.timeSlowEnergy > 0.04) {
-      timeSlowActive = true;
-      this.playerController.timeSlowEnergy = Math.max(0, this.playerController.timeSlowEnergy - dt * 0.34);
-      const ach = this.achievementManager.evaluateAction('timeSlow');
-      if (ach) this.showAchievementNotice(ach.name);
-    } else {
-      this.playerController.timeSlowEnergy = Math.min(1, this.playerController.timeSlowEnergy + dt * 0.22);
-    }
-
-    const worldScale = timeSlowActive ? 0.28 : 1.0;
-
-    // Hitstop freeze on heavy bounce impacts
     if (this.hitstopTimer > 0) {
       this.hitstopTimer = Math.max(0, this.hitstopTimer - dt);
       this.particles.update(dt);
@@ -644,80 +663,109 @@ export class GameEngine {
       return;
     }
 
+    const specialActive = this.playerController.specialActiveTimer > 0;
+    const worldScale = specialActive ? 0.55 : 1.0;
     const playerDt = dt;
     const worldDt = dt * worldScale;
     this.worldTime += worldDt;
     this.elapsedRunTime += dt;
 
-    // 2. Gravity Shift ([Q])
-    if (input.gravityPressed) {
-      const toggled = this.gravityController.tryToggle(level.allowGravityShift);
-      if (toggled) {
-        this.audioManager.playGravityShift(this.gravityController.playerInverted);
-        this.particles.spawnBurst(
-          this.playerController.position.x,
-          this.playerController.position.y,
-          this.playerController.position.z,
-          12,
-          '#48b8d0',
-          5.5,
-          0.45,
-          0.9,
-          0
-        );
-        const ach = this.achievementManager.evaluateAction('gravity');
-        if (ach) this.showAchievementNotice(ach.name);
+    // Monsoon thunder ambience
+    if (this.currentTheme.rainIntensity > 0.5) {
+      this.thunderTimer -= dt;
+      if (this.thunderTimer <= 0) {
+        this.thunderTimer = 9 + Math.random() * 8;
+        this.audioManager.playThunder();
       }
     }
 
     if (this.builtLevel) {
-      this.builtLevel.updateAnimations(this.worldTime, this.realTime, worldDt);
+      this.builtLevel.updateAnimations(this.worldTime, this.realTime, worldDt, this.playerController.position);
+      const prevInv = this.gravityController.playerInverted;
       this.gravityController.update(playerDt, this.playerController.position, this.builtLevel.platforms);
+      if (!prevInv && this.gravityController.playerInverted && !this.gravityZoneTriggered) {
+        this.gravityZoneTriggered = true;
+        const ch = this.challengeManager.evaluateAction('gravityZone');
+        if (ch) this.showNotice(`Challenge · ${ch.title}`);
+      }
     }
 
     const upDir = this.gravityController.getUpDirection();
+    const trailColor =
+      TRAIL_CATALOG[this.saveManager.getData().loadout.trail]?.primaryColor ??
+      this.currentTheme.accentColor;
 
-    // 3. Player Movement, Jump & Momentum Dash
+    // 1. Player Movement & Abilities
     const moveRes = this.playerController.applyMovementAndAbilities(
       playerDt,
       input,
       this.camYaw,
       upDir,
-      level.allowDash
+      level.allowDash,
+      false
     );
 
     if (moveRes.jumped) {
-      this.audioManager.playJump();
+      this.audioManager.playJump(false);
+      this.animController.triggerOneShot('jump', 0.25);
+    }
+    if (moveRes.doubleJumped) {
+      this.audioManager.playJump(true);
+      this.animController.triggerOneShot('doubleJump', 0.42);
+      this.saveManager.incrementStat('totalDoubleJumps', 1);
+      const ch = this.challengeManager.evaluateAction('doubleJump');
+      if (ch) this.showNotice(`Challenge · ${ch.title}`);
       this.particles.spawnBurst(
         this.playerController.position.x,
-        this.playerController.position.y - 0.4 * upDir.y,
+        this.playerController.position.y - 0.3,
         this.playerController.position.z,
-        6,
-        this.currentTheme.accentColor,
-        4.2,
-        0.35,
-        0.7,
-        1.2 * upDir.y
+        10,
+        trailColor,
+        5.0,
+        0.4,
+        0.8,
+        -0.5
       );
     }
-
+    if (moveRes.superBounced) {
+      this.audioManager.playBounce(1.2);
+      this.animController.triggerOneShot('bounce', 0.42);
+      this.character.triggerImpactShockwave(trailColor, 2.3);
+      const ach = this.achievementManager.evaluateAction('bounce');
+      if (ach) this.showNotice(`Achievement · ${ach.name}`);
+    }
+    if (moveRes.slid) {
+      this.audioManager.playSlide();
+      this.saveManager.incrementStat('totalSlides', 1);
+      const ch = this.challengeManager.evaluateAction('slide');
+      if (ch) this.showNotice(`Challenge · ${ch.title}`);
+    }
     if (moveRes.dashed) {
+      this.dashesUsedRun++;
+      this.saveManager.incrementStat('totalDashes', 1);
       this.audioManager.playDash();
-      this.cameraTrauma = Math.min(1, this.cameraTrauma + 0.35);
+      this.animController.triggerOneShot('dash', 0.28);
+      this.cameraTrauma = Math.min(1, this.cameraTrauma + 0.3);
       this.particles.spawnBurst(
         this.playerController.position.x,
         this.playerController.position.y,
         this.playerController.position.z,
         14,
-        this.currentTheme.accentColor,
+        trailColor,
         8.0,
         0.45,
         1.0,
         0.5
       );
     }
+    if (moveRes.specialActivated) {
+      this.audioManager.playSpecial();
+      this.animController.triggerOneShot('special', 0.45);
+      const ch = this.challengeManager.evaluateAction('special');
+      if (ch) this.showNotice(`Challenge · ${ch.title}`);
+    }
 
-    // 4. Physics Step
+    // 2. Physics Step
     if (this.builtLevel) {
       const phys = this.physicsManager.step(
         playerDt,
@@ -727,90 +775,115 @@ export class GameEngine {
         this.builtLevel.platforms,
         this.gravityController,
         this.bounceSystem,
-        this.playerController.grounded
+        this.playerController.grounded,
+        this.playerController.isSliding
       );
 
       this.playerController.grounded = phys.grounded;
 
-      if (phys.landedImpact > 4.5) {
+      if (phys.ridingRoller && !this.rollerRideTriggered) {
+        this.rollerRideTriggered = true;
+        const ach = this.achievementManager.evaluateAction('rollerRide');
+        if (ach) this.showNotice(`Achievement · ${ach.name}`);
+        const ch = this.challengeManager.evaluateAction('rollerRide');
+        if (ch) this.showNotice(`Challenge · ${ch.title}`);
+      }
+
+      if (phys.landedImpact > 5.0) {
         this.playerController.triggerLandSquash(phys.landedImpact);
-        this.orb.triggerImpactShockwave(
-          this.playerController.position.x,
-          this.playerController.position.y,
-          this.playerController.position.z,
-          this.currentTheme.accentColor,
-          1.35
-        );
+        this.animController.triggerOneShot('land', 0.16);
+        this.character.triggerImpactShockwave(trailColor, 1.4);
       }
 
       for (const b of phys.bounceEvents) {
         if (b.padHit) {
           this.audioManager.playBounce(b.impactSpeed / 14);
-          this.hitstopTimer = 0.032;
-          this.cameraTrauma = Math.min(1, this.cameraTrauma + 0.45);
-          this.playerController.squashY = 1.28;
-          this.playerController.squashXZ = 0.8;
-          this.orb.triggerImpactShockwave(
-            b.position.x,
-            b.position.y,
-            b.position.z,
-            this.currentTheme.accentColor,
-            2.4
-          );
-          this.particles.spawnBurst(
-            b.position.x,
-            b.position.y,
-            b.position.z,
-            16,
-            this.currentTheme.accentColor,
-            7.5,
-            0.55,
-            1.1,
-            3.5
-          );
+          this.hitstopTimer = 0.03;
+          this.cameraTrauma = Math.min(1, this.cameraTrauma + 0.4);
+          this.animController.triggerOneShot('bounce', 0.4);
+          this.character.triggerImpactShockwave(trailColor, 2.5);
+          this.particles.spawnBurst(b.position.x, b.position.y, b.position.z, 16, trailColor, 7.5, 0.55, 1.1, 3.5);
           const ach = this.achievementManager.evaluateAction('bounce');
-          if (ach) this.showAchievementNotice(ach.name);
-        } else {
-          this.audioManager.playBounce(0.45);
-          if (b.impactSpeed > 6.0) {
-            this.orb.triggerImpactShockwave(
-              b.position.x,
-              b.position.y,
-              b.position.z,
-              '#cbd5e1',
-              1.25
-            );
-          }
-          this.particles.spawnBurst(
-            b.position.x,
-            b.position.y,
-            b.position.z,
-            5,
-            '#cbd5e1',
-            3.5,
-            0.3,
-            0.6,
-            1.2
-          );
+          if (ach) this.showNotice(`Achievement · ${ach.name}`);
+          const ch = this.challengeManager.evaluateAction('longJump');
+          if (ch) this.showNotice(`Challenge · ${ch.title}`);
         }
       }
 
-      // Position grounded contact shadow
+      // Ground Contact Shadow
       if (phys.hasGroundBelow) {
-        this.orb.contactShadow.visible = true;
-        this.orb.contactShadow.position.set(
+        this.character.contactShadow.visible = true;
+        this.character.contactShadow.position.set(
           this.playerController.position.x,
           phys.groundY + (this.gravityController.playerInverted ? -0.02 : 0.02),
           this.playerController.position.z
         );
-        const heightDist = Math.abs(this.playerController.position.y - phys.groundY);
-        const shadowScale = Math.max(0.45, 1.15 - heightDist * 0.07);
-        this.orb.contactShadow.scale.set(shadowScale, shadowScale, 1);
+        const hDist = Math.abs(this.playerController.position.y - phys.groundY);
+        const sScale = Math.max(0.4, 1.1 - hDist * 0.06);
+        this.character.contactShadow.scale.set(sScale, sScale, 1);
       } else {
-        this.orb.contactShadow.visible = false;
+        this.character.contactShadow.visible = false;
       }
 
-      // 5. Spatial Portals
+      // 3. Moving Traffic Vehicle Collisions (Bounce on Roof OR Side Knockback!)
+      for (const tv of this.builtLevel.traffic) {
+        const distNear = Math.hypot(
+          this.playerController.position.x - tv.pos.x,
+          this.playerController.position.z - tv.pos.z
+        );
+        if (distNear < 6.0 && tv.honkedCooldown <= 0) {
+          tv.honkedCooldown = 3.5;
+          this.audioManager.playHorn();
+        }
+        const hit = intersectVehicleCollision(
+          this.playerController.position,
+          this.physicsManager.radius,
+          tv.pos,
+          tv.size
+        );
+        if (hit.hit) {
+          this.playerController.position.x += hit.pushOut.x;
+          this.playerController.position.y += hit.pushOut.y;
+          this.playerController.position.z += hit.pushOut.z;
+          if (hit.isTopLanding && tv.bounceTop) {
+            this.playerController.velocity.y = 20.5;
+            this.playerController.doubleJumpAvailable = true;
+            this.audioManager.playBounce(1.3);
+            this.animController.triggerOneShot('bounce', 0.4);
+            this.character.triggerImpactShockwave('#f5b832', 2.4);
+            const ach = this.achievementManager.evaluateAction('vehicleBounce');
+            if (ach) this.showNotice(`Achievement · ${ach.name}`);
+          } else if (this.playerController.invulnTimer <= 0) {
+            this.applyPlayerDamage(tv.lane.direction * 6.5, 6.5, 6.0);
+            this.trafficHitsRun++;
+          }
+        }
+      }
+
+      // 4. Boss Encounter Collisions
+      if (this.builtLevel.boss) {
+        const boss = this.builtLevel.boss;
+        const hit = intersectVehicleCollision(
+          this.playerController.position,
+          this.physicsManager.radius,
+          boss.pos,
+          boss.size
+        );
+        if (hit.hit) {
+          this.playerController.position.y += hit.pushOut.y;
+          this.playerController.position.z += hit.pushOut.z;
+          if (hit.isTopLanding) {
+            this.playerController.velocity.y = 22.0;
+            this.playerController.doubleJumpAvailable = true;
+            this.audioManager.playBounce(1.4);
+            this.character.triggerImpactShockwave('#ef4444', 2.8);
+          } else if (this.playerController.invulnTimer <= 0) {
+            this.applyPlayerDamage(0, 7.0, 9.0);
+          }
+        }
+      }
+
+      // 5. Portals
       const portalRes = this.portalSystem.update(
         playerDt,
         this.playerController.position,
@@ -821,23 +894,10 @@ export class GameEngine {
         this.playerController.position = portalRes.newPos;
         this.playerController.velocity = portalRes.newVel;
         this.audioManager.playPortal();
-        this.cameraTrauma = Math.min(1, this.cameraTrauma + 0.4);
-        this.particles.spawnBurst(
-          portalRes.newPos.x,
-          portalRes.newPos.y,
-          portalRes.newPos.z,
-          18,
-          '#48b8d0',
-          8.5,
-          0.5,
-          1.0,
-          0.5
-        );
-        const ach = this.achievementManager.evaluateAction('portal');
-        if (ach) this.showAchievementNotice(ach.name);
+        this.cameraTrauma = Math.min(1, this.cameraTrauma + 0.35);
       }
 
-      // 6. Interactive Switches ([E])
+      // 6. Switches ([E])
       this.nearbySwitchId = null;
       for (const sw of this.builtLevel.switches) {
         if (sw.activated) continue;
@@ -846,7 +906,7 @@ export class GameEngine {
           this.playerController.position.y - (sw.def.position.y + 0.8),
           this.playerController.position.z - sw.def.position.z
         );
-        if (d < 3.0) {
+        if (d < 3.2) {
           this.nearbySwitchId = sw.def.label;
           if (input.interactPressed) {
             sw.activated = true;
@@ -858,17 +918,6 @@ export class GameEngine {
                 p.active = true;
               }
             }
-            this.particles.spawnBurst(
-              sw.def.position.x,
-              sw.def.position.y + 1.4,
-              sw.def.position.z,
-              14,
-              '#58c477',
-              5.5,
-              0.5,
-              0.9,
-              2.0
-            );
           }
         }
       }
@@ -882,34 +931,52 @@ export class GameEngine {
       );
       if (cpTriggered) {
         this.audioManager.playCheckpoint();
-        this.checkpointNotice = `Checkpoint · ${cpTriggered}`;
-        this.checkpointNoticeTimer = 2.6;
-        this.particles.spawnBurst(
-          this.playerController.position.x,
-          this.playerController.position.y,
-          this.playerController.position.z,
-          14,
-          this.currentTheme.accentColor,
-          5.0,
-          0.5,
-          0.9,
-          2.8
-        );
+        this.playerController.health = Math.min(this.playerController.maxHealth, this.playerController.health + 1);
+        this.showNotice(`Checkpoint · ${cpTriggered}`);
       }
 
-      // 8. Collectibles
+      // 8. Collectibles (Coins, Helmets, Blueprints, Energy, Secret Signs)
       const colRes = this.collectibleManager.checkPickups(
         this.playerController.position,
         this.builtLevel.collectibles
       );
       if (colRes.picked) {
-        this.audioManager.playCollectible(this.collectibleManager.collectedIds.length - 1);
+        const kind = colRes.picked.def.kind ?? 'coin';
+        const isRare = kind !== 'coin';
+        this.audioManager.playCollectible(this.collectibleManager.collectedIds.length - 1, isRare);
+        this.animController.triggerOneShot('pickup', 0.25);
+
+        if (kind === 'helmet') {
+          this.helmetsRun++;
+          this.coinsRun += colRes.picked.def.value ?? 50;
+          const ch = this.challengeManager.evaluateAction('helmet');
+          if (ch) this.showNotice(`Challenge · ${ch.title}`);
+        } else if (kind === 'blueprint') {
+          this.blueprintsRun++;
+          this.coinsRun += colRes.picked.def.value ?? 75;
+          const ch = this.challengeManager.evaluateAction('blueprint');
+          if (ch) this.showNotice(`Challenge · ${ch.title}`);
+          this.showNotice('Blueprint Recovered!');
+        } else if (kind === 'energy') {
+          this.playerController.specialEnergy = 1.0;
+          this.playerController.health = Math.min(this.playerController.maxHealth, this.playerController.health + 1);
+          this.coinsRun += colRes.picked.def.value ?? 25;
+        } else if (kind === 'sign') {
+          this.signsRun++;
+          this.coinsRun += colRes.picked.def.value ?? 100;
+          const ch = this.challengeManager.evaluateAction('sign');
+          if (ch) this.showNotice(`Challenge · ${ch.title}`);
+          this.showNotice('Secret Road Sign Found!');
+        } else {
+          this.coinsRun += colRes.picked.def.value ?? 10;
+        }
+
         this.particles.spawnBurst(
           colRes.picked.def.position.x,
           colRes.picked.def.position.y,
           colRes.picked.def.position.z,
           14,
-          this.currentTheme.accentColor,
+          isRare ? '#38bdf8' : '#f5b832',
           6.0,
           0.5,
           0.95,
@@ -918,68 +985,77 @@ export class GameEngine {
       }
     }
 
-    // 9. Abyss / Ceiling Out-of-Bounds Respawn
+    // 9. Abyss / Time Challenge Out-of-Bounds Respawn
     const ceilY = level.ceilingLimitY ?? 45;
     if (this.playerController.position.y < level.fallLimitY || this.playerController.position.y > ceilY) {
       this.fallsCount += 1;
       this.audioManager.playFall();
       this.respawnAtCheckpoint();
     }
+    if (level.timeChallengeSec && this.elapsedRunTime > level.timeChallengeSec) {
+      this.fallsCount += 1;
+      this.audioManager.playFall();
+      this.restartLevel();
+      return;
+    }
 
-    // 10. Finish Beacon Check
+    // 10. Finish Gate Check
     const distToFinish = Math.hypot(
       this.playerController.position.x - level.finishPosition.x,
-      this.playerController.position.y - (level.finishPosition.y + 1.2),
+      this.playerController.position.y - (level.finishPosition.y + 1.5),
       this.playerController.position.z - level.finishPosition.z
     );
-    if (distToFinish < 2.35) {
+    if (distToFinish < 2.6) {
       this.handleLevelComplete();
       return;
     }
 
-    // 11. Update Orb Mesh Transform, Rolling Rotation & Trail Particles
+    // 11. Update 3D Character Rig, Animation Controller & Trails
     const pos = this.playerController.position;
     const vel = this.playerController.velocity;
+    const horizSpeed = Math.hypot(vel.x, vel.z);
     const speed = Math.hypot(vel.x, vel.y, vel.z);
 
-    this.orb.root.position.set(pos.x, pos.y, pos.z);
-    this.orb.root.scale.set(
+    this.character.root.position.set(pos.x, pos.y, pos.z);
+    this.character.root.scale.set(
       this.playerController.squashXZ,
       this.playerController.squashY,
       this.playerController.squashXZ
     );
+    this.character.updateShockwave(dt);
 
-    const horizSpeed = Math.hypot(vel.x, vel.z);
-    if (horizSpeed > 0.1) {
-      _velVec.set(vel.x, 0, vel.z);
-      _upVec.set(upDir.x, upDir.y, upDir.z);
-      _rollAxis.crossVectors(_upVec, _velVec).normalize();
-      if (_rollAxis.lengthSq() > 0.1) {
-        const angle = (horizSpeed * playerDt) / this.physicsManager.radius;
-        _deltaQuat.setFromAxisAngle(_rollAxis, angle);
-        this.orb.rollGroup.quaternion.premultiply(_deltaQuat);
-      }
-    }
+    this.animController.update(this.character, dt, {
+      horizSpeed,
+      velY: vel.y,
+      grounded: this.playerController.grounded,
+      isSprinting: this.playerController.isSprinting,
+      isSliding: this.playerController.isSliding,
+      dashActive: this.playerController.dashActiveTimer > 0,
+      specialActive,
+      facingYaw: this.playerController.facingYaw,
+      victory: false,
+    });
 
-    this.orb.updateVisuals(this.realTime, playerDt, speed, this.playerController.dashActiveTimer > 0);
-    this.audioManager.updateRolling(horizSpeed, this.playerController.grounded, timeSlowActive);
+    this.audioManager.updateMovementAudio(
+      dt,
+      horizSpeed,
+      this.playerController.grounded,
+      this.playerController.isSliding,
+      specialActive
+    );
 
     this.trailAccum += playerDt;
-    if (this.trailAccum >= (this.playerController.dashActiveTimer > 0 ? 0.02 : 0.055) && speed > 3.5) {
+    if (
+      this.trailAccum >= (this.playerController.dashActiveTimer > 0 ? 0.025 : 0.06) &&
+      (speed > 7.5 || this.playerController.isSliding || this.playerController.dashActiveTimer > 0)
+    ) {
       this.trailAccum = 0;
-      this.particles.spawnTrailPoint(
-        pos.x,
-        pos.y,
-        pos.z,
-        this.playerController.dashActiveTimer > 0 ? '#fff3d1' : this.currentTheme.accentColor,
-        this.playerController.dashActiveTimer > 0 ? 1.1 : 0.7
-      );
+      this.particles.spawnTrailPoint(pos.x, pos.y - 0.25, pos.z, trailColor, this.playerController.dashActiveTimer > 0 ? 1.15 : 0.75);
     }
 
     this.particles.update(playerDt);
     this.updateCamera(dt, this.playerController.dashActiveTimer > 0);
 
-    // 12. Notice timers & throttled HUD sync (<= 10Hz)
     if (this.checkpointNoticeTimer > 0) {
       this.checkpointNoticeTimer -= dt;
       if (this.checkpointNoticeTimer <= 0) this.checkpointNotice = null;
@@ -992,7 +1068,24 @@ export class GameEngine {
     this.hudSyncAccum += dt;
     if (this.hudSyncAccum >= 0.1) {
       this.hudSyncAccum = 0;
-      this.emitHud(timeSlowActive);
+      this.emitHud();
+    }
+  }
+
+  private applyPlayerDamage(kx: number, ky: number, kz: number): void {
+    this.playerController.health -= 1;
+    this.playerController.invulnTimer = 1.4;
+    this.damageTakenRun++;
+    this.playerController.velocity.x = kx;
+    this.playerController.velocity.y = ky;
+    this.playerController.velocity.z = kz;
+    this.audioManager.playDamage();
+    this.animController.triggerOneShot('damage', 0.4);
+    this.cameraTrauma = Math.min(1, this.cameraTrauma + 0.55);
+
+    if (this.playerController.health <= 0) {
+      this.fallsCount += 1;
+      this.respawnAtCheckpoint();
     }
   }
 
@@ -1000,9 +1093,10 @@ export class GameEngine {
     const cp = this.checkpointManager;
     this.playerController.position = { ...cp.activeSpawn };
     this.playerController.velocity = { x: 0, y: 0, z: 0 };
+    this.playerController.health = this.playerController.maxHealth;
     this.gravityController.playerInverted = cp.activeGravityInverted;
     this.gravityController.cooldown = 0;
-    this.cameraTrauma = Math.min(1, this.cameraTrauma + 0.35);
+    this.cameraTrauma = Math.min(1, this.cameraTrauma + 0.3);
 
     if (this.builtLevel) {
       for (const p of this.builtLevel.platforms) {
@@ -1012,30 +1106,20 @@ export class GameEngine {
         }
       }
     }
-
-    this.particles.spawnBurst(
-      cp.activeSpawn.x,
-      cp.activeSpawn.y,
-      cp.activeSpawn.z,
-      14,
-      this.currentTheme.accentColor,
-      5.0,
-      0.45,
-      0.85,
-      1.0
-    );
     this.emitHud();
   }
 
   private handleLevelComplete(): void {
     this.audioManager.silenceLoops();
     this.audioManager.playVictory();
+    this.animController.triggerOneShot('levelComplete', 1.5);
+
     this.particles.spawnBurst(
       this.currentLevel.finishPosition.x,
       this.currentLevel.finishPosition.y + 1.5,
       this.currentLevel.finishPosition.z,
       36,
-      this.currentTheme.accentColor,
+      '#f5b832',
       9.0,
       0.85,
       1.2,
@@ -1050,12 +1134,29 @@ export class GameEngine {
       fallsCount: this.fallsCount,
       comboBounces: this.bounceSystem.comboBounces,
     });
+    const stars = computeStarRating({
+      elapsedTime: this.elapsedRunTime,
+      parTime: this.currentLevel.parTime,
+      collectiblesFound: this.collectibleManager.collectedIds.length,
+      collectiblesTotal: this.currentLevel.collectibles.length,
+      fallsCount: this.fallsCount,
+    });
+
+    const stageCompletionCoins = 20 + stars * 10;
+    const totalCoinsEarned = this.coinsRun + stageCompletionCoins;
+    this.saveManager.recordCollectibleTotals({
+      coins: totalCoinsEarned,
+      helmets: this.helmetsRun,
+      blueprints: this.blueprintsRun,
+      signs: this.signsRun,
+    });
 
     const nextLevelId = getNextLevelId(this.currentLevel.id);
     const { isNewBest, previousBest } = this.saveManager.recordLevelCompletion({
       levelId: this.currentLevel.id,
       levelName: this.currentLevel.name,
       score,
+      stars,
       time: this.elapsedRunTime,
       collectedIds: this.collectibleManager.collectedIds,
       nextLevelId,
@@ -1063,12 +1164,33 @@ export class GameEngine {
 
     const newlyUnlockedAchievements = this.achievementManager.evaluateCompletion({
       levelId: this.currentLevel.id,
+      worldId: this.currentLevel.worldId,
       elapsedTime: this.elapsedRunTime,
       parTime: this.currentLevel.parTime,
       collectiblesFound: this.collectibleManager.collectedIds.length,
       collectiblesTotal: this.currentLevel.collectibles.length,
       fallsCount: this.fallsCount,
+      damageTaken: this.damageTakenRun,
     });
+
+    const newlyCompletedChallenges = this.challengeManager.evaluateCompletion({
+      worldId: this.currentLevel.worldId,
+      elapsedTime: this.elapsedRunTime,
+      parTime: this.currentLevel.parTime,
+      collectiblesFound: this.collectibleManager.collectedIds.length,
+      collectiblesTotal: this.currentLevel.collectibles.length,
+      fallsCount: this.fallsCount,
+      dashesUsed: this.dashesUsedRun,
+      bouncesInRun: this.bounceSystem.comboBounces,
+      trafficHits: this.trafficHitsRun,
+      hasTraffic: (this.currentLevel.trafficLanes?.length ?? 0) > 0,
+      hasBoss: Boolean(this.currentLevel.boss),
+      stars,
+    });
+
+    if (this.currentLevel.boss) {
+      this.saveManager.incrementStat('bossesCleared', 1);
+    }
 
     this.setGameState('gameover');
     this.callbacks.onLevelComplete({
@@ -1078,13 +1200,16 @@ export class GameEngine {
       score,
       bestScore: Math.max(previousBest, score),
       isNewBest,
+      stars,
       time: this.elapsedRunTime,
       parTime: this.currentLevel.parTime,
+      coinsEarned: totalCoinsEarned,
       collectiblesFound: this.collectibleManager.collectedIds.length,
       collectiblesTotal: this.currentLevel.collectibles.length,
       fallsCount: this.fallsCount,
       nextLevelId,
       newlyUnlockedAchievements,
+      newlyCompletedChallenges,
     });
   }
 
@@ -1094,12 +1219,10 @@ export class GameEngine {
     const upDir = this.gravityController.getUpDirection();
     const upSign = upDir.y >= 0 ? 1 : -1;
 
-    // Gentle airborne downward framing so landing platforms remain clear during jumps/drops
     const targetAirPitch = !this.playerController.grounded ? 0.14 : 0;
     this.airPitchOffset += (targetAirPitch - this.airPitchOffset) * (1 - Math.exp(-5 * dt));
-    const effectivePitch = Math.max(-0.35, Math.min(1.25, this.camPitch + this.airPitchOffset));
+    const effectivePitch = Math.max(-0.25, Math.min(1.2, this.camPitch + this.airPitchOffset));
 
-    // Desired orbit camera position behind player
     const horizDist = Math.cos(effectivePitch) * this.camDistance;
     const vertDist = Math.sin(effectivePitch) * this.camDistance * upSign;
 
@@ -1108,17 +1231,16 @@ export class GameEngine {
 
     _camGoalPos.set(
       pos.x + Math.sin(this.camYaw) * horizDist + lookAheadX * 0.35,
-      pos.y + vertDist + 0.9 * upSign,
+      pos.y + vertDist + 1.35 * upSign,
       pos.z + Math.cos(this.camYaw) * horizDist + lookAheadZ * 0.35
     );
 
     _camLookPos.set(
       pos.x - Math.sin(this.camYaw) * 2.4 + lookAheadX,
-      pos.y + 0.55 * upSign - (this.airPitchOffset / 0.14) * 0.35 * upSign,
+      pos.y + 1.0 * upSign - (this.airPitchOffset / 0.14) * 0.3 * upSign,
       pos.z - Math.cos(this.camYaw) * 2.4 + lookAheadZ
     );
 
-    // Wall pull-in raycast from player toward desired camera position
     if (this.builtLevel && this.builtLevel.collidableMeshes.length > 0) {
       _camDir.subVectors(_camGoalPos, _camLookPos);
       const dist = _camDir.length();
@@ -1133,23 +1255,22 @@ export class GameEngine {
       }
     }
 
-    const posAlpha = 1 - Math.exp(-10 * dt);
-    const lookAlpha = 1 - Math.exp(-14 * dt);
+    const smooth = this.settings.cameraSmoothing;
+    const posAlpha = 1 - Math.exp(-10 * smooth * dt);
+    const lookAlpha = 1 - Math.exp(-14 * smooth * dt);
     this.currentCamPos.lerp(_camGoalPos, posAlpha);
     this.currentCamLook.lerp(_camLookPos, lookAlpha);
 
-    // Smooth camera up vector flip during Gravity Shift
     _upVec.set(upDir.x, upDir.y, upDir.z);
     this.currentCamUp.lerp(_upVec, 1 - Math.exp(-7 * dt)).normalize();
 
-    // Decaying trauma shake
     let shakeX = 0;
     let shakeY = 0;
     if (this.cameraTrauma > 0) {
-      const mag = this.cameraTrauma * this.cameraTrauma * 0.28;
+      const mag = this.cameraTrauma * this.cameraTrauma * 0.25;
       shakeX = (Math.random() * 2 - 1) * mag;
       shakeY = (Math.random() * 2 - 1) * mag;
-      this.cameraTrauma = Math.max(0, this.cameraTrauma - dt * 2.4);
+      this.cameraTrauma = Math.max(0, this.cameraTrauma - dt * 2.5);
     }
 
     this.camera.position.set(
@@ -1160,29 +1281,24 @@ export class GameEngine {
     this.camera.up.copy(this.currentCamUp);
     this.camera.lookAt(this.currentCamLook);
 
-    // Subtle FOV kick on Momentum Dash / high velocity
-    const speed = Math.hypot(
-      this.playerController.velocity.x,
-      this.playerController.velocity.z
-    );
-    const targetFov = dashActive ? 74 : 62 + Math.min(8, Math.max(0, (speed - 10) * 0.7));
+    const speed = Math.hypot(vel.x, vel.z);
+    const targetFov = dashActive ? 74 : 62 + Math.min(8, Math.max(0, (speed - 11) * 0.7));
     if (Math.abs(this.camera.fov - targetFov) > 0.05) {
       this.camera.fov += (targetFov - this.camera.fov) * (1 - Math.exp(-10 * dt));
       this.camera.updateProjectionMatrix();
     }
 
-    // Keep shadow frustum centered near player
     this.keyLight.position.set(pos.x + 22, pos.y + 34, pos.z + 18);
     this.keyLight.target.position.set(pos.x, pos.y, pos.z);
     this.keyLight.target.updateMatrixWorld();
   }
 
-  private showAchievementNotice(name: string): void {
-    this.achievementNotice = `Achievement Unlocked · ${name}`;
-    this.achievementNoticeTimer = 3.2;
+  private showNotice(msg: string): void {
+    this.checkpointNotice = msg;
+    this.checkpointNoticeTimer = 2.8;
   }
 
-  private emitHud(timeSlowActive = false): void {
+  private emitHud(): void {
     const level = this.currentLevel;
     const liveScore = computeLevelScore({
       elapsedTime: this.elapsedRunTime,
@@ -1201,24 +1317,33 @@ export class GameEngine {
       levelName: level.name,
       worldName: this.currentTheme.name,
       score: liveScore,
+      coinsRun: this.coinsRun,
+      totalCoins: this.saveManager.getData().coins + this.coinsRun,
       collectiblesFound: this.collectibleManager.collectedIds.length,
       collectiblesTotal: level.collectibles.length,
+      health: this.playerController.health,
+      maxHealth: this.playerController.maxHealth,
       elapsedTime: this.elapsedRunTime,
+      timeChallengeRemaining: level.timeChallengeSec
+        ? Math.max(0, level.timeChallengeSec - this.elapsedRunTime)
+        : null,
       speed,
+      isSprinting: this.playerController.isSprinting,
+      isSliding: this.playerController.isSliding,
+      bounceCooldownRatio: this.playerController.bounceCooldown / this.playerController.maxBounceCooldown,
       dashCooldownRatio: this.playerController.dashCooldown / this.playerController.maxDashCooldown,
       dashCharge: this.playerController.dashCharge,
+      specialCooldownRatio: this.playerController.specialCooldown / this.playerController.maxSpecialCooldown,
+      specialActive: this.playerController.specialActiveTimer > 0,
+      specialEnergy: this.playerController.specialEnergy,
       gravityInverted: this.gravityController.playerInverted,
-      gravityCooldownRatio: this.gravityController.cooldown / this.gravityController.maxCooldown,
-      timeSlowActive,
-      timeSlowEnergy: this.playerController.timeSlowEnergy,
       checkpointLabel: this.checkpointManager.activeLabel,
       checkpointNotice: this.checkpointNotice,
       achievementNotice: this.achievementNotice,
+      bossName: level.boss?.name ?? null,
       interactPrompt: this.nearbySwitchId,
-      levelHint: this.elapsedRunTime < 5.5 ? level.hint ?? null : null,
+      levelHint: this.elapsedRunTime < 6.5 ? level.hint ?? null : null,
       fallsCount: this.fallsCount,
-      canGravityShift: level.allowGravityShift,
-      canTimeControl: level.allowTimeControl,
       canDash: level.allowDash,
     });
   }
@@ -1231,7 +1356,7 @@ export class GameEngine {
     this.builtLevel?.dispose();
     this.skyDome.geometry.dispose();
     (this.skyDome.material as THREE.Material).dispose();
-    this.orb.dispose();
+    this.character.dispose();
     this.particles.dispose();
     this.textures.dispose();
     this.renderer.dispose();

@@ -271,3 +271,54 @@ export function computeLevelScore(params: {
     baseCompletion + shardBonus + allShardsBonus + speedBonus + noFallBonus + bounceSkillBonus - fallPenalty
   );
 }
+
+export function computeStarRating(params: {
+  elapsedTime: number;
+  parTime: number;
+  collectiblesFound: number;
+  collectiblesTotal: number;
+  fallsCount: number;
+}): 1 | 2 | 3 {
+  let stars = 1;
+  const shardRatio =
+    params.collectiblesTotal > 0 ? params.collectiblesFound / params.collectiblesTotal : 1;
+  if (params.elapsedTime <= params.parTime * 1.15 || shardRatio >= 0.6) {
+    stars = 2;
+  }
+  if (
+    params.elapsedTime <= params.parTime * 1.05 &&
+    params.fallsCount <= 1 &&
+    shardRatio >= 0.75
+  ) {
+    stars = 3;
+  }
+  return stars as 1 | 2 | 3;
+}
+
+export function intersectVehicleCollision(
+  playerPos: Vec3,
+  radius: number,
+  vCenter: Vec3,
+  vSize: Vec3
+): { hit: boolean; isTopLanding: boolean; pushOut: Vec3 } {
+  const hx = vSize.x * 0.5 + radius;
+  const hy = vSize.y * 0.5 + radius;
+  const hz = vSize.z * 0.5 + radius;
+  const dx = playerPos.x - vCenter.x;
+  const dy = playerPos.y - vCenter.y;
+  const dz = playerPos.z - vCenter.z;
+
+  if (Math.abs(dx) > hx || Math.abs(dy) > hy || Math.abs(dz) > hz) {
+    return { hit: false, isTopLanding: false, pushOut: { x: 0, y: 0, z: 0 } };
+  }
+
+  // Landing cleanly on roof of vehicle grants a super bounce rather than damage!
+  const isTopLanding = dy > vSize.y * 0.25;
+  if (isTopLanding) {
+    return { hit: true, isTopLanding: true, pushOut: { x: 0, y: hy - dy, z: 0 } };
+  }
+
+  const pushZ = dz >= 0 ? hz - dz : -(hz + dz);
+  return { hit: true, isTopLanding: false, pushOut: { x: 0, y: 0.4, z: pushZ } };
+}
+

@@ -1,66 +1,82 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
-import { SaveManager } from './SaveManager';
-import { SettingsManager } from './SettingsManager';
-import { AchievementManager } from './AchievementManager';
+import test from 'node:test';
+import { AchievementManager } from './AchievementManager.ts';
+import { ChallengeManager } from './ChallengeManager.ts';
+import { SaveManager } from './SaveManager.ts';
+import { SettingsManager } from './SettingsManager.ts';
 
-test('SaveManager initializes with World 1 Level 1 unlocked and Copper skin equipped', () => {
-  const sm = new SaveManager();
-  const data = sm.getData();
-  assert.equal(sm.isLevelUnlocked('w1-l1'), true);
-  assert.equal(sm.isLevelUnlocked('w1-l2'), false);
-  assert.equal(data.equippedSkin, 'copper');
-  assert.deepEqual(data.unlockedSkins, ['copper']);
+test('SaveManager initializes with w1-l1 unlocked and default Indian kurta loadout', () => {
+  const save = new SaveManager();
+  const data = save.getData();
+  assert.equal(data.unlockedLevelIds.includes('w1-l1'), true);
+  assert.equal(data.loadout.kurta, 'ivory');
+  assert.equal(data.loadout.headwear, 'wire_glasses');
+  assert.equal(data.coins, 50);
 });
 
-test('SaveManager unlocks next level, records best scores, and populates leaderboard', () => {
-  const sm = new SaveManager();
-  const res = sm.recordLevelCompletion({
+test('SaveManager unlocks cosmetics, equips kurta, and records stars & progress', () => {
+  const save = new SaveManager();
+  save.addCoins(100);
+  const unlockRes = save.unlockCosmetic('saffron');
+  assert.equal(unlockRes.ok, true);
+  assert.equal(save.equipCosmetic('kurta', 'saffron'), true);
+  assert.equal(save.getData().loadout.kurta, 'saffron');
+
+  save.recordLevelCompletion({
     levelId: 'w1-l1',
-    levelName: 'Conduit Crossing',
-    score: 2650,
-    time: 31.4,
-    collectedIds: ['w1l1-c1', 'w1l1-c2'],
+    levelName: 'Site Induction',
+    score: 2950,
+    stars: 3,
+    time: 24.5,
+    collectedIds: ['c1', 'c2'],
     nextLevelId: 'w1-l2',
   });
-  assert.equal(res.isNewBest, true);
-  assert.equal(sm.isLevelUnlocked('w1-l2'), true);
-  assert.equal(sm.getData().leaderboard.length, 1);
-  assert.equal(sm.getTotalUniqueShards(), 2);
+  assert.equal(save.getData().unlockedLevelIds.includes('w1-l2'), true);
+  assert.equal(save.getData().levelProgress['w1-l1']?.stars, 3);
 });
 
-test('AchievementManager unlocks achievements and rewards skins', () => {
-  const sm = new SaveManager();
-  const am = new AchievementManager(sm);
+test('AchievementManager & ChallengeManager grant rewards on actions and completion', () => {
+  const save = new SaveManager();
+  const ach = new AchievementManager(save);
+  const chal = new ChallengeManager(save);
 
-  const unlocked = am.evaluateCompletion({
+  const first = ach.evaluateCompletion({
     levelId: 'w1-l1',
-    elapsedTime: 29,
-    parTime: 38,
+    worldId: 1,
+    elapsedTime: 25,
+    parTime: 32,
     collectiblesFound: 5,
     collectiblesTotal: 5,
     fallsCount: 0,
+    damageTaken: 0,
   });
+  assert.ok(first.some((a) => a.id === 'first_road'));
+  assert.ok(first.some((a) => a.id === 'speedrunner'));
 
-  const ids = unlocked.map((a) => a.id);
-  assert.ok(ids.includes('first_awakening'));
-  assert.ok(ids.includes('speedrunner'));
-  assert.ok(ids.includes('shard_collector'));
-  assert.ok(ids.includes('no_fall_run'));
-
-  const gravAch = am.evaluateAction('gravity');
-  assert.equal(gravAch?.id, 'gravity_defier');
-  assert.ok(sm.getData().unlockedSkins.includes('cryo'));
-  assert.equal(sm.equipSkin('cryo'), true);
-  assert.equal(sm.getData().equippedSkin, 'cryo');
+  const completedCh = chal.evaluateCompletion({
+    worldId: 1,
+    elapsedTime: 25,
+    parTime: 32,
+    collectiblesFound: 5,
+    collectiblesTotal: 5,
+    fallsCount: 0,
+    dashesUsed: 0,
+    bouncesInRun: 12,
+    trafficHits: 0,
+    hasTraffic: false,
+    hasBoss: false,
+    stars: 3,
+  });
+  assert.ok(completedCh.some((c) => c.id === 'ch_no_fall'));
+  assert.ok(completedCh.some((c) => c.id === 'ch_ten_bounces'));
 });
 
-test('SettingsManager updates sensitivity and keybindings cleanly', () => {
-  const setMgr = new SettingsManager();
-  setMgr.update({ mouseSensitivity: 1.6, masterVolume: 0.4 });
-  setMgr.updateBinding('dash', 'KeyF');
-  const s = setMgr.getSettings();
-  assert.equal(s.mouseSensitivity, 1.6);
-  assert.equal(s.masterVolume, 0.4);
-  assert.equal(s.bindings.dash, 'KeyF');
+test('SettingsManager updates camera distance and keybindings cleanly', () => {
+  const mgr = new SettingsManager();
+  mgr.update({ cameraDistance: 10.5, invertY: true });
+  mgr.updateBinding('bounce', 'KeyB');
+  const next = mgr.getSettings();
+  assert.equal(next.cameraDistance, 10.5);
+  assert.equal(next.invertY, true);
+  assert.equal(next.bindings.bounce, 'KeyB');
 });

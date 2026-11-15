@@ -12,6 +12,7 @@ interface GameHudProps {
 function formatKeyLabel(code: string): string {
   if (code === 'Space') return 'SPACE';
   if (code === 'ShiftLeft' || code === 'ShiftRight') return 'SHIFT';
+  if (code === 'ControlLeft' || code === 'ControlRight') return 'CTRL';
   if (code === 'Escape') return 'ESC';
   return code.replace('Key', '').replace('Digit', '');
 }
@@ -33,32 +34,53 @@ export function GameHud({
 }: GameHudProps) {
   return (
     <div className="fixed inset-0 z-10 pointer-events-none flex flex-col justify-between p-4 md:p-6">
-      {/* Subtle peripheral tint during Time Slow or Inverted Gravity */}
-      {hud.timeSlowActive && (
+      {/* Subtle peripheral accent during Highway Surge */}
+      {hud.specialActive && (
         <div
-          className="fixed inset-0 pointer-events-none border-4 border-[#48b8d0]/40"
+          className="fixed inset-0 pointer-events-none border-4 border-[#58c477]/45"
           aria-hidden="true"
         />
       )}
 
-      {/* Top Perimeter Clusters */}
+      {/* Top HUD Bar */}
       <div className="flex items-start justify-between gap-4">
-        {/* Top-Left: Level & Active Checkpoint */}
+        {/* Top-Left: World, Stage, Checkpoint & Health Hearts */}
         <div className="hud-panel border-l-2 border-l-[#e59a3c] rounded px-4 py-2.5 max-w-xs">
-          <div className="text-[11px] font-semibold tracking-[0.16em] text-[#e59a3c] uppercase">
+          <div className="text-[10px] font-semibold tracking-[0.16em] text-[#e59a3c] uppercase">
             {hud.worldName}
           </div>
           <div className="font-display text-lg font-bold text-[#f3f5f8] leading-tight mt-0.5">
             {hud.levelName}
           </div>
-          <div className="text-xs text-[#9ba5b4] mt-0.5 flex items-center gap-1.5">
-            <span>Checkpoint:</span>
-            <span className="text-[#d7dee8] font-medium truncate">{hud.checkpointLabel}</span>
+          <div className="mt-1 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-1" aria-label={`Health ${hud.health} of ${hud.maxHealth}`}>
+              {Array.from({ length: hud.maxHealth }).map((_, idx) => (
+                <svg
+                  key={idx}
+                  viewBox="0 0 24 24"
+                  className={`w-4 h-4 ${idx < hud.health ? 'text-[#ef4444]' : 'text-white/15'}`}
+                  aria-hidden="true"
+                >
+                  <path
+                    fill="currentColor"
+                    d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"
+                  />
+                </svg>
+              ))}
+            </div>
+            <span className="text-[11px] text-[#9ba5b4] truncate">
+              CP: <span className="text-[#d7dee8] font-medium">{hud.checkpointLabel}</span>
+            </span>
           </div>
         </div>
 
-        {/* Center-Top Notifications (Checkpoint / Achievement) */}
+        {/* Center-Top: Boss Banner & Live Notifications */}
         <div className="flex flex-col items-center gap-2">
+          {hud.bossName && (
+            <div className="hud-panel border-[#ef4444]/60 rounded px-4 py-1.5 text-xs font-display font-bold tracking-wider text-[#fca5a5] uppercase">
+              BOSS HAZARD: {hud.bossName}
+            </div>
+          )}
           {hud.checkpointNotice && (
             <div className="hud-panel rounded px-4 py-1.5 text-xs font-display font-semibold tracking-wider text-[#e59a3c] animate-toast-in">
               {hud.checkpointNotice}
@@ -71,14 +93,14 @@ export function GameHud({
           )}
         </div>
 
-        {/* Top-Right: Score, Shards, Timer & Utility Controls */}
+        {/* Top-Right: Score, Road Coins, Items, Timer & Utility Controls */}
         <div className="flex items-start gap-2.5">
-          <div className="hud-panel rounded px-4 py-2 flex items-center gap-5">
+          <div className="hud-panel rounded px-4 py-2 flex items-center gap-4">
             <div>
               <div className="text-[10px] tracking-[0.14em] text-[#9ba5b4] uppercase">Score</div>
               <div
                 data-testid="hud-score"
-                className="font-mono-num text-xl font-bold text-[#f3f5f8] leading-tight"
+                className="font-mono-num text-lg font-bold text-[#f3f5f8] leading-tight"
               >
                 {Math.round(hud.score)}
               </div>
@@ -86,41 +108,49 @@ export function GameHud({
 
             <div className="h-7 w-px bg-white/10" aria-hidden="true" />
 
-            <div className="flex items-center gap-2">
-              <svg viewBox="0 0 24 24" className="w-5 h-5 shrink-0" aria-hidden="true">
-                <polygon
-                  points="12,2 20,12 12,22 4,12"
-                  fill="#e59a3c"
-                  stroke="#141820"
-                  strokeWidth="1.5"
-                />
-                <polygon points="12,5 16,12 12,15 8,12" fill="#fde3b4" opacity="0.7" />
-              </svg>
-              <div>
-                <div className="text-[10px] tracking-[0.14em] text-[#9ba5b4] uppercase">Shards</div>
-                <div
-                  data-testid="hud-shards"
-                  className="font-mono-num text-lg font-bold text-[#f3f5f8] leading-tight"
-                >
-                  {hud.collectiblesFound}/{hud.collectiblesTotal}
-                </div>
+            <div>
+              <div className="text-[10px] tracking-[0.14em] text-[#9ba5b4] uppercase">Coins</div>
+              <div
+                data-testid="hud-coins"
+                className="font-mono-num text-lg font-bold text-[#f5b832] leading-tight"
+              >
+                +{hud.coinsRun}
               </div>
             </div>
 
             <div className="h-7 w-px bg-white/10" aria-hidden="true" />
 
             <div>
-              <div className="text-[10px] tracking-[0.14em] text-[#9ba5b4] uppercase">Time</div>
+              <div className="text-[10px] tracking-[0.14em] text-[#9ba5b4] uppercase">Items</div>
               <div
-                data-testid="hud-time"
+                data-testid="hud-shards"
                 className="font-mono-num text-lg font-bold text-[#f3f5f8] leading-tight"
               >
-                {formatTime(hud.elapsedTime)}
+                {hud.collectiblesFound}/{hud.collectiblesTotal}
+              </div>
+            </div>
+
+            <div className="h-7 w-px bg-white/10" aria-hidden="true" />
+
+            <div>
+              <div className="text-[10px] tracking-[0.14em] text-[#9ba5b4] uppercase">
+                {hud.timeChallengeRemaining !== null ? 'Limit' : 'Time'}
+              </div>
+              <div
+                data-testid="hud-time"
+                className={`font-mono-num text-lg font-bold leading-tight ${
+                  hud.timeChallengeRemaining !== null && hud.timeChallengeRemaining < 10
+                    ? 'text-[#ef4444]'
+                    : 'text-[#f3f5f8]'
+                }`}
+              >
+                {formatTime(
+                  hud.timeChallengeRemaining !== null ? hud.timeChallengeRemaining : hud.elapsedTime
+                )}
               </div>
             </div>
           </div>
 
-          {/* Utility Icon Buttons */}
           <div className="flex items-center gap-1.5 pointer-events-auto">
             <button
               type="button"
@@ -180,7 +210,7 @@ export function GameHud({
         </div>
       </div>
 
-      {/* Bottom Perimeter: Contextual Interact Prompt + Opening Stage Hint + Compact Ability Cooldown Bar */}
+      {/* Bottom HUD Bar */}
       <div className="flex flex-col items-center gap-2">
         {hud.interactPrompt && (
           <div className="hud-panel rounded px-4 py-1.5 text-xs font-display font-semibold tracking-wider text-[#f3f5f8]">
@@ -194,22 +224,42 @@ export function GameHud({
         )}
 
         <div className="hud-panel rounded px-4 py-2 flex items-center gap-4">
-          {/* Speed Readout */}
-          <div className="pr-2 border-r border-white/10 text-right min-w-[68px]">
-            <div className="text-[10px] tracking-[0.14em] text-[#9ba5b4] uppercase">Speed</div>
+          {/* Speed + State */}
+          <div className="pr-3 border-r border-white/10 text-right min-w-[78px]">
+            <div className="text-[10px] tracking-[0.14em] text-[#9ba5b4] uppercase">
+              {hud.isSliding ? 'SLIDE' : hud.isSprinting ? 'SPRINT' : 'SPEED'}
+            </div>
             <div className="font-mono-num text-sm font-bold text-[#f3f5f8]">
               {Math.round(hud.speed * 3.6)} <span className="text-[10px] text-[#9ba5b4]">km/h</span>
             </div>
           </div>
 
-          {/* Dash Ability */}
-          <div className="flex items-center gap-2 min-w-[125px]">
+          {/* Super Bounce [Q] */}
+          <div className="flex items-center gap-2 min-w-[120px]">
+            <div className="px-1.5 py-0.5 rounded bg-white/10 font-mono-num text-[11px] font-semibold text-[#f5b832]">
+              {formatKeyLabel(bindings.bounce)}
+            </div>
+            <div className="flex-1">
+              <div className="text-[11px] font-medium text-[#e6e9ef] leading-none mb-1">
+                Super Bounce
+              </div>
+              <div className="h-1.5 w-full bg-white/10 rounded overflow-hidden">
+                <div
+                  className="h-full bg-[#f5b832] transition-all duration-75"
+                  style={{ width: `${Math.round((1 - hud.bounceCooldownRatio) * 100)}%` }}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Road Dash [V] */}
+          <div className={`flex items-center gap-2 min-w-[120px] ${hud.canDash ? 'opacity-100' : 'opacity-40'}`}>
             <div className="px-1.5 py-0.5 rounded bg-white/10 font-mono-num text-[11px] font-semibold text-[#e59a3c]">
               {formatKeyLabel(bindings.dash)}
             </div>
             <div className="flex-1">
               <div className="text-[11px] font-medium text-[#e6e9ef] leading-none mb-1">
-                Bounce Dash
+                Road Dash
               </div>
               <div className="h-1.5 w-full bg-white/10 rounded overflow-hidden">
                 <div
@@ -224,50 +274,29 @@ export function GameHud({
             </div>
           </div>
 
-          {/* Gravity Shift Ability */}
-          <div
-            className={`flex items-center gap-2 min-w-[125px] ${
-              hud.canGravityShift ? 'opacity-100' : 'opacity-40'
-            }`}
-          >
-            <div className="px-1.5 py-0.5 rounded bg-white/10 font-mono-num text-[11px] font-semibold text-[#48b8d0]">
-              {formatKeyLabel(bindings.gravityShift)}
+          {/* Special Highway Surge [F] */}
+          <div className="flex items-center gap-2 min-w-[128px]">
+            <div className="px-1.5 py-0.5 rounded bg-white/10 font-mono-num text-[11px] font-semibold text-[#58c477]">
+              {formatKeyLabel(bindings.special)}
             </div>
             <div className="flex-1">
               <div className="text-[11px] font-medium text-[#e6e9ef] leading-none mb-1">
-                {hud.gravityInverted ? 'Gravity: INV' : 'Gravity Shift'}
+                {hud.specialActive ? 'Surge: ACTIVE' : 'Highway Surge'}
               </div>
               <div className="h-1.5 w-full bg-white/10 rounded overflow-hidden">
                 <div
-                  className="h-full bg-[#48b8d0] transition-all duration-75"
-                  style={{
-                    width: `${Math.round((1 - hud.gravityCooldownRatio) * 100)}%`,
-                  }}
+                  className="h-full bg-[#58c477] transition-all duration-75"
+                  style={{ width: `${Math.round(hud.specialEnergy * 100)}%` }}
                 />
               </div>
             </div>
           </div>
 
-          {/* Time Control Ability */}
-          <div
-            className={`flex items-center gap-2 min-w-[125px] ${
-              hud.canTimeControl ? 'opacity-100' : 'opacity-40'
-            }`}
-          >
-            <div className="px-1.5 py-0.5 rounded bg-white/10 font-mono-num text-[11px] font-semibold text-[#d9d9e3]">
-              {formatKeyLabel(bindings.timeSlow)}
-            </div>
-            <div className="flex-1">
-              <div className="text-[11px] font-medium text-[#e6e9ef] leading-none mb-1">
-                {hud.timeSlowActive ? 'Time: SLOW' : 'Time Control'}
-              </div>
-              <div className="h-1.5 w-full bg-white/10 rounded overflow-hidden">
-                <div
-                  className="h-full bg-[#d9d9e3] transition-all duration-75"
-                  style={{ width: `${Math.round(hud.timeSlowEnergy * 100)}%` }}
-                />
-              </div>
-            </div>
+          {/* Sprint / Slide Quick Keys */}
+          <div className="hidden md:flex items-center gap-2 pl-2 border-l border-white/10 text-[10px] font-mono-num text-[#9ba5b4]">
+            <span>[{formatKeyLabel(bindings.sprint)}] Sprint</span>
+            <span>[{formatKeyLabel(bindings.slide)}] Slide</span>
+            {hud.gravityInverted && <span className="text-[#48b8d0] font-bold">INV-G</span>}
           </div>
         </div>
       </div>
